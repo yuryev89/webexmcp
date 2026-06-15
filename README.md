@@ -132,8 +132,8 @@ See **[docs/HOWTO.md](docs/HOWTO.md)** for step-by-step setup: bot creation, sco
 ## Local development
 
 ```bash
-git clone https://github.com/yuryev89/webex-mcp
-cd webex-mcp
+git clone https://github.com/yuryev89/webexmcp
+cd webexmcp
 npm install
 cp .env.example .env
 npm run dev -- --token "$WEBEX_ACCESS_TOKEN"

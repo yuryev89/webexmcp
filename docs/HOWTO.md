@@ -244,8 +244,8 @@ Find user ivan@example.com and send them the message "Hello!"
 ## 9. Local Development
 
 ```bash
-git clone https://github.com/yuryev89/webex-mcp
-cd webex-mcp
+git clone https://github.com/yuryev89/webexmcp
+cd webexmcp
 npm install
 cp .env.example .env   # WEBEX_ACCESS_TOKEN=...
 npm run dev -- --token "$WEBEX_ACCESS_TOKEN"
@@ -260,7 +260,7 @@ Cursor config for local development:
     "webex-dev": {
       "command": "npm",
       "args": ["run", "dev", "--", "--token", "YOUR_TOKEN"],
-      "cwd": "/path/to/webex-mcp"
+      "cwd": "/path/to/webexmcp"
     }
   }
 }
