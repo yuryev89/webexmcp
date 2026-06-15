@@ -26,9 +26,13 @@ describe("normalize", () => {
       title: "Project Alpha",
       type: "group",
       isLocked: false,
+      isPublic: undefined,
+      isAnnouncementOnly: undefined,
       lastActivity: "2024-01-01T00:00:00.000Z",
       creatorId: "creator-1",
       created: "2023-01-01T00:00:00.000Z",
+      description: "ignored",
+      teamId: undefined,
     });
   });
 

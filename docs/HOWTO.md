@@ -37,12 +37,17 @@ Enable these scopes in the bot settings:
 
 | Scope | Purpose |
 |-------|---------|
-| `spark:rooms_read` | List spaces |
-| `spark:rooms_write` | Create spaces |
-| `spark:memberships_write` | Invite members |
+| `spark:rooms_read` | List and get spaces |
+| `spark:rooms_write` | Create, update, and delete spaces |
+| `spark:memberships_read` | List and get space memberships |
+| `spark:memberships_write` | Invite, update, and remove members |
 | `spark:messages_read` | Read and search messages |
-| `spark:messages_write` | Send messages |
-| `spark:people_read` | Search people |
+| `spark:messages_write` | Send, update, and delete messages |
+| `spark:people_read` | Search and get people |
+| `spark:teams_read` | List and get teams |
+| `spark:teams_write` | Create, update, and delete teams |
+| `spark:webhooks_read` | List and get webhooks |
+| `spark:webhooks_write` | Create, update, and delete webhooks |
 | `spark:kms` | Access encrypted messages (required for OAuth integrations) |
 
 Save your changes.
@@ -83,15 +88,20 @@ Use OAuth when you want actions on behalf of your Webex user account with automa
 
 | Scope | Purpose |
 |-------|---------|
-| `spark:rooms_read` | List spaces |
-| `spark:rooms_write` | Create spaces |
-| `spark:memberships_write` | Invite members |
+| `spark:rooms_read` | List and get spaces |
+| `spark:rooms_write` | Create, update, and delete spaces |
+| `spark:memberships_read` | List and get space memberships |
+| `spark:memberships_write` | Invite, update, and remove members |
 | `spark:messages_read` | Read and search messages |
-| `spark:messages_write` | Send messages |
-| `spark:people_read` | Search people |
+| `spark:messages_write` | Send, update, and delete messages |
+| `spark:people_read` | Search and get people |
+| `spark:teams_read` | List and get teams |
+| `spark:teams_write` | Create, update, and delete teams |
+| `spark:webhooks_read` | List and get webhooks |
+| `spark:webhooks_write` | Create, update, and delete webhooks |
 | `spark:kms` | Access encrypted messages (required for OAuth integrations) |
 
-5. Save and copy **Client ID** and **Client Secret** (secret shown once)
+1. Save and copy **Client ID** and **Client Secret** (secret shown once)
 
 ### Step 2 — Authenticate Once
 
@@ -132,7 +142,7 @@ To sign out: `npx -y @yuryev89/webex-mcp@latest logout`
 
 ---
 
-Restart Cursor. The `webex` server should appear in MCP with 8 tools.
+Restart Cursor. The `webex` server should appear in MCP with 37 tools.
 
 Alternative — global install (Bot mode):
 
@@ -206,16 +216,72 @@ Find user ivan@example.com and send them the message "Hello!"
 
 ## 6. Tool Reference
 
+### Spaces
+
 | Tool | When to use |
 |------|-------------|
 | `webex_list_spaces` | List all rooms |
 | `webex_search_spaces` | Find a room by name/title |
+| `webex_get_space` | Get room details by ID |
 | `webex_create_space` | Create a new room |
-| `webex_add_membership` | Invite someone to a room |
-| `webex_get_people` | Find a person by email or name |
+| `webex_update_space` | Update room title, description, or settings |
+| `webex_delete_space` | Delete a room |
+| `webex_get_space_meeting_info` | Get meeting info for a room |
+
+### Messages
+
+| Tool | When to use |
+|------|-------------|
 | `webex_get_messages` | Message history or a single message by ID |
 | `webex_search_messages` | Search text within a room |
 | `webex_create_message` | Send a message to a space or DM |
+| `webex_update_message` | Edit an existing message |
+| `webex_delete_message` | Delete a message |
+| `webex_list_direct_messages` | List messages in a 1:1 room |
+| `webex_create_attachment_action` | Submit a card form action |
+| `webex_get_attachment_action` | Get attachment action details |
+
+### Memberships
+
+| Tool | When to use |
+|------|-------------|
+| `webex_list_memberships` | List members of a space |
+| `webex_get_membership` | Get membership details |
+| `webex_add_membership` | Invite someone to a room |
+| `webex_update_membership` | Change moderator/monitor status |
+| `webex_remove_membership` | Remove someone from a room |
+
+### People
+
+| Tool | When to use |
+|------|-------------|
+| `webex_get_people` | Find a person by email or name |
+| `webex_get_person` | Get a person by ID (use `me` for yourself) |
+
+### Teams
+
+| Tool | When to use |
+|------|-------------|
+| `webex_list_teams` | List teams |
+| `webex_create_team` | Create a team |
+| `webex_get_team` | Get team details |
+| `webex_update_team` | Update a team |
+| `webex_delete_team` | Delete a team |
+| `webex_list_team_memberships` | List team members |
+| `webex_add_team_membership` | Add someone to a team |
+| `webex_get_team_membership` | Get team membership details |
+| `webex_update_team_membership` | Update team moderator status |
+| `webex_remove_team_membership` | Remove someone from a team |
+
+### Webhooks
+
+| Tool | When to use |
+|------|-------------|
+| `webex_list_webhooks` | List registered webhooks |
+| `webex_create_webhook` | Register a new webhook |
+| `webex_get_webhook` | Get webhook details |
+| `webex_update_webhook` | Update a webhook |
+| `webex_delete_webhook` | Delete a webhook |
 
 ## 7. Limitations
 
@@ -224,6 +290,7 @@ Find user ivan@example.com and send them the message "Hello!"
 - The bot must be a **member** of a space to read or post messages
 - Dev tokens expire in ~12 hours; Bot tokens are long-lived
 - Webex API rate limit: ~300 req/min
+- Admin APIs (people CRUD, ECM folders, events audit, room tabs) are not included in this release
 
 ## 8. Troubleshooting
 

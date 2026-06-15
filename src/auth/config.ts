@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { OAuthConfig } from "./types.js";
 
 export const DEFAULT_SCOPES =
-  "spark:rooms_read spark:rooms_write spark:memberships_write spark:messages_read spark:messages_write spark:people_read spark:kms";
+  "spark:rooms_read spark:rooms_write spark:memberships_read spark:memberships_write spark:messages_read spark:messages_write spark:people_read spark:teams_read spark:teams_write spark:webhooks_read spark:webhooks_write spark:kms";
 
 export const DEFAULT_REDIRECT_URI = "http://127.0.0.1:4321/oauth/callback";
 

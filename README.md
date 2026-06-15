@@ -6,13 +6,9 @@ Minimal MCP server that exposes Webex messaging tools over stdio. Works with Cur
 
 ## Features
 
-- List and create Webex spaces
-- Search spaces by name/title
-- Invite people to spaces
-- Read and search messages
-- Find people by email or name
-- Send messages to spaces or direct messages
-- Bearer token authentication via `webex-node` SDK
+- Full core Webex Messaging API coverage: spaces, messages, memberships, people, teams, webhooks, and attachment actions
+- Search spaces and messages by keyword (client-side scan)
+- Bearer token authentication via `webex-node` SDK with REST fallback for select endpoints
 - OAuth 2.0 Integration login with automatic token refresh
 
 ## Requirements
@@ -100,16 +96,72 @@ Run `npx -y @yuryev89/webex-mcp@latest login` once before starting Cursor (with 
 
 ## Tools
 
+### Spaces
+
 | Tool | Description |
 |------|-------------|
 | `webex_list_spaces` | List spaces (rooms) for the authenticated user |
 | `webex_search_spaces` | Search spaces by title/name (case-insensitive) |
+| `webex_get_space` | Get space details by ID |
 | `webex_create_space` | Create a new space |
-| `webex_add_membership` | Invite a person to a space |
-| `webex_get_people` | Search people by email, name, or ID |
+| `webex_update_space` | Update a space |
+| `webex_delete_space` | Delete a space |
+| `webex_get_space_meeting_info` | Get meeting details for a space |
+
+### Messages
+
+| Tool | Description |
+|------|-------------|
 | `webex_get_messages` | List messages in a space or get one by ID |
 | `webex_search_messages` | Keyword search within a single space |
 | `webex_create_message` | Send a message to a space or DM |
+| `webex_update_message` | Update an existing message |
+| `webex_delete_message` | Delete a message |
+| `webex_list_direct_messages` | List messages in a 1:1 direct room |
+| `webex_create_attachment_action` | Submit an attachment card action |
+| `webex_get_attachment_action` | Get attachment action details |
+
+### Memberships
+
+| Tool | Description |
+|------|-------------|
+| `webex_list_memberships` | List space memberships |
+| `webex_get_membership` | Get membership details |
+| `webex_add_membership` | Invite a person to a space |
+| `webex_update_membership` | Update membership (e.g. moderator) |
+| `webex_remove_membership` | Remove a person from a space |
+
+### People
+
+| Tool | Description |
+|------|-------------|
+| `webex_get_people` | Search people by email, name, or ID |
+| `webex_get_person` | Get a person by ID (use `me` for yourself) |
+
+### Teams
+
+| Tool | Description |
+|------|-------------|
+| `webex_list_teams` | List teams |
+| `webex_create_team` | Create a team |
+| `webex_get_team` | Get team details |
+| `webex_update_team` | Update a team |
+| `webex_delete_team` | Delete a team |
+| `webex_list_team_memberships` | List team memberships |
+| `webex_add_team_membership` | Add a person to a team |
+| `webex_get_team_membership` | Get team membership details |
+| `webex_update_team_membership` | Update team membership |
+| `webex_remove_team_membership` | Remove a person from a team |
+
+### Webhooks
+
+| Tool | Description |
+|------|-------------|
+| `webex_list_webhooks` | List webhooks |
+| `webex_create_webhook` | Create a webhook |
+| `webex_get_webhook` | Get webhook details |
+| `webex_update_webhook` | Update a webhook |
+| `webex_delete_webhook` | Delete a webhook |
 
 ## Limitations
 
