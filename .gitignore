@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.env
+*.log
+.DS_Store
+.workplace/
+apm_modules/
+apm.yml
+apm.lock.yaml
+.cursor/
+test/**/*.js
+test/**/*.d.ts
+test/**/*.js.map
+test/**/*.d.ts.map

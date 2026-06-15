@@ -1,0 +1,55 @@
+{
+  "name": "@yuryev89/webex-mcp",
+  "version": "0.1.0",
+  "description": "Webex MCP server exposing messaging tools over stdio",
+  "type": "module",
+  "main": "dist/cli.js",
+  "types": "dist/cli.d.ts",
+  "bin": {
+    "webex-mcp": "dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/cli.d.ts",
+      "default": "./dist/cli.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yuryev89/webexmcp.git"
+  },
+  "keywords": [
+    "webex",
+    "cisco",
+    "mcp",
+    "model-context-protocol",
+    "messaging",
+    "teams"
+  ],
+  "author": "yuryev89",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.18.2",
+    "dotenv": "^17.2.3",
+    "webex-node": "^3.12.0",
+    "yargs": "^18.0.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^24.6.2",
+    "@types/yargs": "^17.0.33",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}
