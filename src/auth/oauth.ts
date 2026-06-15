@@ -93,6 +93,28 @@ export async function refreshAccessToken(
   });
 }
 
+export function formatOAuthCallbackError(error: string, scopes: string): string {
+  if (!error.startsWith("invalid_scope")) {
+    return error;
+  }
+
+  const scopeList = scopes
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((scope) => `  - ${scope}`)
+    .join("\n");
+
+  return `${error}
+
+Each scope in the authorize URL must be enabled on your Webex Integration.
+Open https://developer.webex.com/my-apps, edit your Integration, and check every scope below:
+
+${scopeList}
+
+spark:kms is required for encrypted message access and is included automatically on integrations.
+Compare with the "OAuth Authorization URL" on your Integration page — scopes must match.`;
+}
+
 export function parseCallbackQuery(
   searchParams: URLSearchParams
 ): { code: string } | { error: string } {

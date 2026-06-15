@@ -43,6 +43,7 @@ Enable these scopes in the bot settings:
 | `spark:messages_read` | Read and search messages |
 | `spark:messages_write` | Send messages |
 | `spark:people_read` | Search people |
+| `spark:kms` | Access encrypted messages (required for OAuth integrations) |
 
 Save your changes.
 
@@ -88,6 +89,7 @@ Use OAuth when you want actions on behalf of your Webex user account with automa
 | `spark:messages_read` | Read and search messages |
 | `spark:messages_write` | Send messages |
 | `spark:people_read` | Search people |
+| `spark:kms` | Access encrypted messages (required for OAuth integrations) |
 
 5. Save and copy **Client ID** and **Client Secret** (secret shown once)
 
@@ -230,7 +232,7 @@ Find user ivan@example.com and send them the message "Hello!"
 | MCP server won't start | Check Node >= 18: `node -v` |
 | 401 Unauthorized | Token expired — update Bot token, or run `webex-mcp login` for OAuth |
 | OAuth `redirect_uri_mismatch` | Redirect URI in Integration must match `WEBEX_REDIRECT_URI` exactly |
-| OAuth `invalid_scope` | Enable all scopes from Step 1 on your Integration; upgrade to latest `webex-mcp` (older builds encoded scopes incorrectly) |
+| OAuth `invalid_scope` | Enable **every** scope from Step 1 on your Integration (including `spark:kms`); compare with the OAuth Authorization URL on your Integration page; override with `WEBEX_SCOPES` if needed |
 | `No OAuth tokens found` | Run `webex-mcp login` after setting client ID/secret |
 | Refresh token expired | Run `webex-mcp logout` then `webex-mcp login` again |
 | 403 Forbidden | Bot is missing scopes — check Step 2 |

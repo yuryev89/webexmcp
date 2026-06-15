@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { DEFAULT_SCOPES } from "../src/auth/config.js";
 import {
   buildAuthorizeUrl,
+  formatOAuthCallbackError,
   parseCallbackQuery,
   tokenRecordFromResponse,
 } from "../src/auth/oauth.js";
@@ -48,6 +49,16 @@ describe("oauth", () => {
     const result = parseCallbackQuery(params);
     assert.ok("error" in result);
     assert.match(result.error, /access_denied/);
+  });
+
+  it("formatOAuthCallbackError adds integration scope guidance for invalid_scope", () => {
+    const message = formatOAuthCallbackError(
+      "invalid_scope: The requested scope is invalid.",
+      DEFAULT_SCOPES
+    );
+    assert.match(message, /invalid_scope/);
+    assert.match(message, /spark:kms/);
+    assert.match(message, /developer\.webex\.com\/my-apps/);
   });
 
   it("tokenRecordFromResponse calculates expiry timestamps", () => {

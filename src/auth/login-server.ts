@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { URL } from "node:url";
-import { buildAuthorizeUrl, exchangeCode, parseCallbackQuery } from "./oauth.js";
+import { buildAuthorizeUrl, exchangeCode, formatOAuthCallbackError, parseCallbackQuery } from "./oauth.js";
 import { TokenStore } from "./token-store.js";
 import type { OAuthConfig } from "./types.js";
 
@@ -52,8 +52,9 @@ export async function runOAuthLogin(
 
         const parsed = parseCallbackQuery(requestUrl.searchParams);
         if ("error" in parsed) {
-          sendHtml(res, 400, "Authentication Failed", parsed.error);
-          reject(new Error(parsed.error));
+          const message = formatOAuthCallbackError(parsed.error, config.scopes);
+          sendHtml(res, 400, "Authentication Failed", message);
+          reject(new Error(message));
           return;
         }
 
