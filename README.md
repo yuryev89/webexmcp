@@ -13,13 +13,16 @@ Minimal MCP server that exposes Webex messaging tools over stdio. Works with Cur
 - Find people by email or name
 - Send messages to spaces or direct messages
 - Bearer token authentication via `webex-node` SDK
+- OAuth 2.0 Integration login with automatic token refresh
 
 ## Requirements
 
 - Node.js >= 18
-- Webex Bot access token ([developer.webex.com](https://developer.webex.com))
+- Webex Bot access token **or** Webex Integration (OAuth) — [developer.webex.com](https://developer.webex.com)
 
 ## Quick start
+
+### Option A — Bot token
 
 ```bash
 # Run via npx (recommended)
@@ -30,7 +33,23 @@ npm install -g @yuryev89/webex-mcp
 webex-mcp --token YOUR_ACCESS_TOKEN
 ```
 
+### Option B — OAuth Integration
+
+```bash
+# 1. Set credentials (or use a .env file in your working directory)
+export WEBEX_CLIENT_ID="your-client-id"
+export WEBEX_CLIENT_SECRET="your-client-secret"
+
+# 2. Authenticate once (opens browser)
+npx -y @yuryev89/webex-mcp@latest login
+
+# 3. Start MCP server (reads saved tokens, auto-refreshes)
+npx -y @yuryev89/webex-mcp@latest
+```
+
 ## Cursor configuration
+
+### Bot token
 
 ```json
 {
@@ -49,13 +68,35 @@ webex-mcp --token YOUR_ACCESS_TOKEN
 }
 ```
 
+### OAuth Integration
+
+```json
+{
+  "mcpServers": {
+    "webex": {
+      "command": "npx",
+      "args": ["-y", "@yuryev89/webex-mcp@latest"],
+      "env": {
+        "WEBEX_CLIENT_ID": "YOUR_CLIENT_ID",
+        "WEBEX_CLIENT_SECRET": "YOUR_CLIENT_SECRET"
+      }
+    }
+  }
+}
+```
+
+Run `npx -y @yuryev89/webex-mcp@latest login` once before starting Cursor (with `WEBEX_CLIENT_ID` and `WEBEX_CLIENT_SECRET` set).
+
 ## CLI options
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--token` | Webex access token | `$WEBEX_ACCESS_TOKEN` |
+| Option / Command | Description | Default |
+|------------------|-------------|---------|
+| `--token` | Webex access token (Bot mode) | `$WEBEX_ACCESS_TOKEN` |
 | `--fedramp` | Use FedRAMP endpoint | `false` |
 | `--debug` | Log startup to stderr | `false` |
+| `login` | OAuth browser login, save tokens | — |
+| `logout` | Remove stored OAuth tokens | — |
+| `auth-status` | Show OAuth expiry metadata | — |
 
 ## Tools
 
@@ -75,7 +116,14 @@ webex-mcp --token YOUR_ACCESS_TOKEN
 - `webex_search_messages` works within a **single space** only (Webex REST API has no global search)
 - Search scans message history page by page — may be slow in large spaces
 - Bot must be a **member** of a space to read or post messages
-- No OAuth flow in MVP — static access token only
+- OAuth uses user-delegated tokens; Bot mode uses a long-lived Bot token
+
+## Authentication modes
+
+| Mode | Setup | Best for |
+|------|-------|----------|
+| **Bot token** | Copy token from developer portal | Simple Cursor setup, bot identity |
+| **OAuth Integration** | `webex-mcp login` + client ID/secret | User-delegated access with auto-refresh |
 
 ## Full guide
 

@@ -45,21 +45,63 @@ type WebexPage<T> = {
 export type WebexOpts = {
   token: string;
   fedramp?: boolean;
+  getToken?: () => Promise<string>;
 };
 
-export function createWebexClient(opts: WebexOpts) {
-  const initConfig: {
-    config?: { fedramp: boolean };
-    credentials: { access_token: string };
-  } = {
-    credentials: { access_token: opts.token },
-  };
-
-  if (opts.fedramp) {
-    initConfig.config = { fedramp: true };
+function isAuthError(err: unknown): boolean {
+  if (!err || typeof err !== "object") {
+    return false;
   }
 
-  const webex = Webex.init(initConfig);
+  const error = err as {
+    statusCode?: number;
+    status?: number;
+    message?: string;
+    body?: { message?: string };
+  };
+
+  const status = error.statusCode ?? error.status;
+  if (status === 401) {
+    return true;
+  }
+
+  const message = `${error.message ?? ""} ${error.body?.message ?? ""}`.toLowerCase();
+  return message.includes("401") || message.includes("invalid token");
+}
+
+export function createWebexClient(opts: WebexOpts) {
+  let currentToken = opts.token;
+
+  function initWebex(accessToken: string): WebexInstance {
+    const initConfig: {
+      config?: { fedramp: boolean };
+      credentials: { access_token: string };
+    } = {
+      credentials: { access_token: accessToken },
+    };
+
+    if (opts.fedramp) {
+      initConfig.config = { fedramp: true };
+    }
+
+    return Webex.init(initConfig);
+  }
+
+  let webex = initWebex(currentToken);
+
+  async function withAuthRetry<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (err) {
+      if (!opts.getToken || !isAuthError(err)) {
+        throw err;
+      }
+
+      currentToken = await opts.getToken();
+      webex = initWebex(currentToken);
+      return fn();
+    }
+  }
 
   async function listSpaces(params: {
     type?: "group" | "direct";
@@ -67,16 +109,18 @@ export function createWebexClient(opts: WebexOpts) {
     max?: number;
     sortBy?: string;
   }) {
-    const listOpts: Record<string, unknown> = {};
-    if (params.type) listOpts.type = params.type;
-    if (params.teamId) listOpts.teamId = params.teamId;
-    if (params.sortBy) listOpts.sortBy = params.sortBy;
-    listOpts.max = params.max ?? 100;
+    return withAuthRetry(async () => {
+      const listOpts: Record<string, unknown> = {};
+      if (params.type) listOpts.type = params.type;
+      if (params.teamId) listOpts.teamId = params.teamId;
+      if (params.sortBy) listOpts.sortBy = params.sortBy;
+      listOpts.max = params.max ?? 100;
 
-    const page = await webex.rooms.list(listOpts);
-    const spaces = page.items.map((s) => normalizeSpace(s));
+      const page = await webex.rooms.list(listOpts);
+      const spaces = page.items.map((s) => normalizeSpace(s));
 
-    return { total: spaces.length, spaces };
+      return { total: spaces.length, spaces };
+    });
   }
 
   async function searchSpaces(params: {
@@ -86,23 +130,25 @@ export function createWebexClient(opts: WebexOpts) {
     maxResults?: number;
     scanLimit?: number;
   }) {
-    const listOpts: Record<string, unknown> = { max: 100 };
-    if (params.type) listOpts.type = params.type;
-    if (params.teamId) listOpts.teamId = params.teamId;
+    return withAuthRetry(async () => {
+      const listOpts: Record<string, unknown> = { max: 100 };
+      if (params.type) listOpts.type = params.type;
+      if (params.teamId) listOpts.teamId = params.teamId;
 
-    const { matched, scanned, hasMore } = await scanPagedMatches({
-      fetchFirstPage: () => webex.rooms.list(listOpts),
-      matches: (item) => matchesSpaceTitle(item, params.query),
-      maxResults: params.maxResults ?? 20,
-      scanLimit: params.scanLimit ?? 500,
+      const { matched, scanned, hasMore } = await scanPagedMatches({
+        fetchFirstPage: () => webex.rooms.list(listOpts),
+        matches: (item) => matchesSpaceTitle(item, params.query),
+        maxResults: params.maxResults ?? 20,
+        scanLimit: params.scanLimit ?? 500,
+      });
+
+      return {
+        matched: matched.length,
+        scanned,
+        hasMore,
+        spaces: matched.map((s) => normalizeSpace(s)),
+      };
     });
-
-    return {
-      matched: matched.length,
-      scanned,
-      hasMore,
-      spaces: matched.map((s) => normalizeSpace(s)),
-    };
   }
 
   async function createSpace(params: {
@@ -113,17 +159,19 @@ export function createWebexClient(opts: WebexOpts) {
     isPublic?: boolean;
     isAnnouncementOnly?: boolean;
   }) {
-    const body: Record<string, unknown> = { title: params.title };
-    if (params.teamId) body.teamId = params.teamId;
-    if (params.description) body.description = params.description;
-    if (params.isLocked !== undefined) body.isLocked = params.isLocked;
-    if (params.isPublic !== undefined) body.isPublic = params.isPublic;
-    if (params.isAnnouncementOnly !== undefined) {
-      body.isAnnouncementOnly = params.isAnnouncementOnly;
-    }
+    return withAuthRetry(async () => {
+      const body: Record<string, unknown> = { title: params.title };
+      if (params.teamId) body.teamId = params.teamId;
+      if (params.description) body.description = params.description;
+      if (params.isLocked !== undefined) body.isLocked = params.isLocked;
+      if (params.isPublic !== undefined) body.isPublic = params.isPublic;
+      if (params.isAnnouncementOnly !== undefined) {
+        body.isAnnouncementOnly = params.isAnnouncementOnly;
+      }
 
-    const space = await webex.rooms.create(body);
-    return normalizeSpace(space);
+      const space = await webex.rooms.create(body);
+      return normalizeSpace(space);
+    });
   }
 
   async function addMembership(params: {
@@ -132,15 +180,17 @@ export function createWebexClient(opts: WebexOpts) {
     personId?: string;
     isModerator?: boolean;
   }) {
-    const body: Record<string, unknown> = {
-      roomId: params.roomId,
-      isModerator: params.isModerator ?? false,
-    };
-    if (params.personId) body.personId = params.personId;
-    else if (params.personEmail) body.personEmail = params.personEmail;
+    return withAuthRetry(async () => {
+      const body: Record<string, unknown> = {
+        roomId: params.roomId,
+        isModerator: params.isModerator ?? false,
+      };
+      if (params.personId) body.personId = params.personId;
+      else if (params.personEmail) body.personEmail = params.personEmail;
 
-    const membership = await webex.memberships.create(body);
-    return normalizeMembership(membership);
+      const membership = await webex.memberships.create(body);
+      return normalizeMembership(membership);
+    });
   }
 
   async function getMessages(params: {
@@ -151,27 +201,29 @@ export function createWebexClient(opts: WebexOpts) {
     mentionedPeople?: string;
     max?: number;
   }) {
-    if (params.messageId) {
-      const message = await webex.messages.get(params.messageId);
-      return { messages: [normalizeMessage(message)] };
-    }
+    return withAuthRetry(async () => {
+      if (params.messageId) {
+        const message = await webex.messages.get(params.messageId);
+        return { messages: [normalizeMessage(message)] };
+      }
 
-    if (!params.roomId) {
-      throw new Error("roomId is required when messageId is not provided");
-    }
+      if (!params.roomId) {
+        throw new Error("roomId is required when messageId is not provided");
+      }
 
-    const listOpts: Record<string, unknown> = {
-      roomId: params.roomId,
-      max: params.max ?? 50,
-    };
-    if (params.before) listOpts.before = params.before;
-    if (params.beforeMessage) listOpts.beforeMessage = params.beforeMessage;
-    if (params.mentionedPeople) listOpts.mentionedPeople = params.mentionedPeople;
+      const listOpts: Record<string, unknown> = {
+        roomId: params.roomId,
+        max: params.max ?? 50,
+      };
+      if (params.before) listOpts.before = params.before;
+      if (params.beforeMessage) listOpts.beforeMessage = params.beforeMessage;
+      if (params.mentionedPeople) listOpts.mentionedPeople = params.mentionedPeople;
 
-    const page = await webex.messages.list(listOpts);
-    const messages = page.items.map((m) => normalizeMessage(m));
+      const page = await webex.messages.list(listOpts);
+      const messages = page.items.map((m) => normalizeMessage(m));
 
-    return { total: messages.length, messages };
+      return { total: messages.length, messages };
+    });
   }
 
   async function searchMessages(params: {
@@ -181,25 +233,27 @@ export function createWebexClient(opts: WebexOpts) {
     scanLimit?: number;
     before?: string;
   }) {
-    const listOpts: Record<string, unknown> = {
-      roomId: params.roomId,
-      max: 100,
-    };
-    if (params.before) listOpts.before = params.before;
+    return withAuthRetry(async () => {
+      const listOpts: Record<string, unknown> = {
+        roomId: params.roomId,
+        max: 100,
+      };
+      if (params.before) listOpts.before = params.before;
 
-    const { matched, scanned, hasMore } = await scanPagedMatches({
-      fetchFirstPage: () => webex.messages.list(listOpts),
-      matches: (item) => matchesMessageText(item, params.query),
-      maxResults: params.maxResults ?? 20,
-      scanLimit: params.scanLimit ?? 500,
+      const { matched, scanned, hasMore } = await scanPagedMatches({
+        fetchFirstPage: () => webex.messages.list(listOpts),
+        matches: (item) => matchesMessageText(item, params.query),
+        maxResults: params.maxResults ?? 20,
+        scanLimit: params.scanLimit ?? 500,
+      });
+
+      return {
+        matched: matched.length,
+        scanned,
+        hasMore,
+        messages: matched.map((m) => normalizeMessage(m)),
+      };
     });
-
-    return {
-      matched: matched.length,
-      scanned,
-      hasMore,
-      messages: matched.map((m) => normalizeMessage(m)),
-    };
   }
 
   async function getPeople(params: {
@@ -208,15 +262,17 @@ export function createWebexClient(opts: WebexOpts) {
     id?: string;
     max?: number;
   }) {
-    const listOpts: Record<string, unknown> = { max: params.max ?? 100 };
-    if (params.email) listOpts.email = params.email;
-    if (params.displayName) listOpts.displayName = params.displayName;
-    if (params.id) listOpts.id = params.id;
+    return withAuthRetry(async () => {
+      const listOpts: Record<string, unknown> = { max: params.max ?? 100 };
+      if (params.email) listOpts.email = params.email;
+      if (params.displayName) listOpts.displayName = params.displayName;
+      if (params.id) listOpts.id = params.id;
 
-    const page = await webex.people.list(listOpts);
-    const people = page.items.map((p) => normalizePerson(p));
+      const page = await webex.people.list(listOpts);
+      const people = page.items.map((p) => normalizePerson(p));
 
-    return { total: people.length, people };
+      return { total: people.length, people };
+    });
   }
 
   async function createMessage(params: {
@@ -227,16 +283,18 @@ export function createWebexClient(opts: WebexOpts) {
     toPersonId?: string;
     parentId?: string;
   }) {
-    const body: Record<string, unknown> = {};
-    if (params.roomId) body.roomId = params.roomId;
-    if (params.text) body.text = params.text;
-    if (params.markdown) body.markdown = params.markdown;
-    if (params.toPersonEmail) body.toPersonEmail = params.toPersonEmail;
-    if (params.toPersonId) body.toPersonId = params.toPersonId;
-    if (params.parentId) body.parentId = params.parentId;
+    return withAuthRetry(async () => {
+      const body: Record<string, unknown> = {};
+      if (params.roomId) body.roomId = params.roomId;
+      if (params.text) body.text = params.text;
+      if (params.markdown) body.markdown = params.markdown;
+      if (params.toPersonEmail) body.toPersonEmail = params.toPersonEmail;
+      if (params.toPersonId) body.toPersonId = params.toPersonId;
+      if (params.parentId) body.parentId = params.parentId;
 
-    const message = await webex.messages.create(body);
-    return normalizeMessage(message);
+      const message = await webex.messages.create(body);
+      return normalizeMessage(message);
+    });
   }
 
   return {
