@@ -376,21 +376,11 @@ export function createWebexClient(opts: WebexOpts) {
       const cacheFresh = !isCacheExpired(cacheRecord);
       const cacheCount = Object.keys(cacheRecord.spaces).length;
 
-      if (cacheFresh && cacheRecord.complete && cacheCount > 0) {
-        const spaces = searchCachedSpaces(cacheRecord, searchParams);
-        return {
-          matched: spaces.length,
-          scanned: cacheCount,
-          hasMore: false,
-          source: "cache" as const,
-          spaces,
-        };
-      }
-
       let cacheMatches: CachedSpace[] = [];
       if (cacheFresh && cacheCount > 0) {
         cacheMatches = searchCachedSpaces(cacheRecord, searchParams);
-        if (cacheMatches.length >= maxResults) {
+        // Prefer cache: full index, or any hit in a partial cache. API only on cache miss.
+        if (cacheRecord.complete || cacheMatches.length > 0) {
           return {
             matched: cacheMatches.length,
             scanned: cacheCount,
