@@ -45,25 +45,31 @@ export function registerSpaceTools(server: McpServer, client: WebexClient) {
     "webex_search_spaces",
     {
       description:
-        "Search Webex spaces (rooms) by title/name. Case-insensitive substring match with pagination.",
+        "Search Webex spaces (rooms) by title/name. Case-insensitive substring match.",
       inputSchema: {
         query: z.string().describe("Space name or title substring to search for"),
         type: z.enum(["group", "direct"]).optional().describe("Filter by space type"),
         teamId: z.string().optional().describe("Limit search to rooms in a specific team"),
+        sortBy: z
+          .string()
+          .optional()
+          .describe('Sort order for API scan (default: "lastactivity")'),
         maxResults: z.number().int().positive().max(100).default(20),
         scanLimit: z.number().int().positive().max(5000).default(500),
       },
     },
-    async ({ query, type, teamId, maxResults, scanLimit }) => {
+    async ({ query, type, teamId, sortBy, maxResults, scanLimit }) => {
       const params: {
         query: string;
         type?: "group" | "direct";
         teamId?: string;
+        sortBy?: string;
         maxResults: number;
         scanLimit: number;
       } = { query, maxResults, scanLimit };
       if (type) params.type = type;
       if (teamId) params.teamId = teamId;
+      if (sortBy) params.sortBy = sortBy;
       return jsonResult(await client.searchSpaces(params));
     }
   );

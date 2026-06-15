@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import { readSpacesCacheConfig } from "./auth/config.js";
 import {
   normalizeAttachmentAction,
   normalizeMembership,
@@ -19,6 +20,18 @@ import {
 } from "./normalize.js";
 import { createRestClient } from "./rest-client.js";
 import { matchesMessageText, matchesSpaceTitle, scanPagedMatches } from "./search.js";
+import {
+  createEmptyCacheRecord,
+  isCacheExpired,
+  mergeCachedSpaces,
+  type CachedSpace,
+  type SpacesCacheRecord,
+  removeCachedSpace,
+  replaceCachedSpaces,
+  searchCachedSpaces,
+  SpacesCacheStore,
+  upsertCachedSpaces,
+} from "./spaces-cache.js";
 
 const require = createRequire(import.meta.url);
 const Webex = require("webex-node") as {
@@ -91,6 +104,13 @@ export type WebexOpts = {
   getToken?: () => Promise<string>;
 };
 
+function toCachedSpace(space: ReturnType<typeof normalizeSpace>): CachedSpace | null {
+  if (!space.id) {
+    return null;
+  }
+  return space as CachedSpace;
+}
+
 function isAuthError(err: unknown): boolean {
   if (!err || typeof err !== "object") {
     return false;
@@ -114,6 +134,11 @@ function isAuthError(err: unknown): boolean {
 
 export function createWebexClient(opts: WebexOpts) {
   let currentToken = opts.token;
+  const spacesCacheConfig = readSpacesCacheConfig();
+  const spacesCacheStore = spacesCacheConfig.enabled
+    ? new SpacesCacheStore(spacesCacheConfig.cachePath, spacesCacheConfig.ttlMs)
+    : null;
+  let syncInFlight: Promise<unknown> | null = null;
 
   function initWebex(accessToken: string): WebexInstance {
     const initConfig: {
@@ -140,6 +165,103 @@ export function createWebexClient(opts: WebexOpts) {
   if (opts.fedramp !== undefined) restOpts.fedramp = opts.fedramp;
   if (opts.getToken) restOpts.refreshToken = opts.getToken;
   const rest = createRestClient(restOpts);
+
+  async function loadSpacesCache(): Promise<SpacesCacheRecord> {
+    if (!spacesCacheStore) {
+      return createEmptyCacheRecord(spacesCacheConfig.ttlMs);
+    }
+    return spacesCacheStore.load();
+  }
+
+  async function saveSpacesCache(record: SpacesCacheRecord): Promise<void> {
+    if (!spacesCacheStore) {
+      return;
+    }
+    await spacesCacheStore.save(record);
+  }
+
+  async function cacheSpaceMutation(
+    mutate: (record: SpacesCacheRecord) => SpacesCacheRecord
+  ): Promise<void> {
+    if (!spacesCacheStore) {
+      return;
+    }
+    const record = await loadSpacesCache();
+    await saveSpacesCache(mutate(record));
+  }
+
+  async function fetchAllSpacesForCache(maxSpaces: number): Promise<{
+    spaces: CachedSpace[];
+    complete: boolean;
+  }> {
+    const spaces: CachedSpace[] = [];
+    let complete = false;
+    let page = await webex.rooms.list({ max: 100, sortBy: "lastactivity" });
+
+    while (true) {
+      for (const item of page.items) {
+        const cached = toCachedSpace(normalizeSpace(item));
+        if (cached) {
+          spaces.push(cached);
+        }
+        if (spaces.length >= maxSpaces) {
+          complete = false;
+          return { spaces, complete };
+        }
+      }
+
+      if (!page.next) {
+        complete = true;
+        break;
+      }
+
+      page = await page.next();
+    }
+
+    return { spaces, complete };
+  }
+
+  async function syncSpacesCache(params?: { maxSpaces?: number }) {
+    return withAuthRetry(async () => {
+      const maxSpaces = params?.maxSpaces ?? spacesCacheConfig.maxSpaces;
+      const { spaces, complete } = await fetchAllSpacesForCache(maxSpaces);
+      const record = replaceCachedSpaces(await loadSpacesCache(), spaces, complete);
+      await saveSpacesCache(record);
+
+      return {
+        synced: spaces.length,
+        complete,
+        syncedAt: record.syncedAt,
+        cachePath: spacesCacheConfig.cachePath,
+      };
+    });
+  }
+
+  function scheduleSpacesCacheSync(): void {
+    if (!spacesCacheStore || syncInFlight) {
+      return;
+    }
+
+    syncInFlight = syncSpacesCache()
+      .catch(() => undefined)
+      .finally(() => {
+        syncInFlight = null;
+      });
+  }
+
+  async function ensureSpacesCacheFresh(): Promise<void> {
+    if (!spacesCacheStore) {
+      return;
+    }
+
+    const record = await loadSpacesCache();
+    if (!isCacheExpired(record) && record.complete) {
+      return;
+    }
+
+    scheduleSpacesCacheSync();
+    await syncInFlight;
+  }
 
   async function withAuthRetry<T>(fn: () => Promise<T>): Promise<T> {
     try {
@@ -210,13 +332,19 @@ export function createWebexClient(opts: WebexOpts) {
       }
 
       const space = await webex.rooms.update(body);
-      return normalizeSpace(space);
+      const normalized = normalizeSpace(space);
+      const cached = toCachedSpace(normalized);
+      if (cached) {
+        await cacheSpaceMutation((record) => upsertCachedSpaces(record, [cached]));
+      }
+      return normalized;
     });
   }
 
   async function deleteSpace(roomId: string) {
     return withAuthRetry(async () => {
       await webex.rooms.remove(roomId);
+      await cacheSpaceMutation((record) => removeCachedSpace(record, roomId));
       return { deleted: true, roomId };
     });
   }
@@ -231,24 +359,87 @@ export function createWebexClient(opts: WebexOpts) {
     teamId?: string;
     maxResults?: number;
     scanLimit?: number;
+    sortBy?: string;
   }) {
     return withAuthRetry(async () => {
-      const listOpts: Record<string, unknown> = { max: 100 };
+      const maxResults = params.maxResults ?? 20;
+      const scanLimit = params.scanLimit ?? 500;
+      const sortBy = params.sortBy ?? "lastactivity";
+      const searchParams = {
+        query: params.query,
+        maxResults,
+        ...(params.type ? { type: params.type } : {}),
+        ...(params.teamId ? { teamId: params.teamId } : {}),
+      };
+
+      let cacheRecord = await loadSpacesCache();
+      const cacheFresh = !isCacheExpired(cacheRecord);
+      const cacheCount = Object.keys(cacheRecord.spaces).length;
+
+      if (cacheFresh && cacheRecord.complete && cacheCount > 0) {
+        const spaces = searchCachedSpaces(cacheRecord, searchParams);
+        return {
+          matched: spaces.length,
+          scanned: cacheCount,
+          hasMore: false,
+          source: "cache" as const,
+          spaces,
+        };
+      }
+
+      let cacheMatches: CachedSpace[] = [];
+      if (cacheFresh && cacheCount > 0) {
+        cacheMatches = searchCachedSpaces(cacheRecord, searchParams);
+        if (cacheMatches.length >= maxResults) {
+          return {
+            matched: cacheMatches.length,
+            scanned: cacheCount,
+            hasMore: !cacheRecord.complete,
+            source: "cache" as const,
+            spaces: cacheMatches,
+          };
+        }
+      }
+
+      const listOpts: Record<string, unknown> = { max: 100, sortBy };
       if (params.type) listOpts.type = params.type;
       if (params.teamId) listOpts.teamId = params.teamId;
 
       const { matched, scanned, hasMore } = await scanPagedMatches({
         fetchFirstPage: () => webex.rooms.list(listOpts),
         matches: (item) => matchesSpaceTitle(item, params.query),
-        maxResults: params.maxResults ?? 20,
-        scanLimit: params.scanLimit ?? 500,
+        maxResults,
+        scanLimit,
       });
 
+      const apiSpaces = matched.map((space) => normalizeSpace(space));
+      const cachedFromApi = apiSpaces
+        .map((space) => toCachedSpace(space))
+        .filter((space): space is CachedSpace => space !== null);
+
+      if (cachedFromApi.length > 0) {
+        cacheRecord = upsertCachedSpaces(cacheRecord, cachedFromApi);
+        await saveSpacesCache(cacheRecord);
+      }
+
+      if (!cacheFresh || !cacheRecord.complete) {
+        scheduleSpacesCacheSync();
+      }
+
+      const mergedSpaces = mergeCachedSpaces(cacheMatches, cachedFromApi, maxResults);
+      const source =
+        cacheMatches.length > 0 && cachedFromApi.length > 0
+          ? ("cache+api" as const)
+          : cacheMatches.length > 0
+            ? ("cache" as const)
+            : ("api" as const);
+
       return {
-        matched: matched.length,
-        scanned,
+        matched: mergedSpaces.length,
+        scanned: cacheFresh ? cacheCount + scanned : scanned,
         hasMore,
-        spaces: matched.map((s) => normalizeSpace(s)),
+        source,
+        spaces: mergedSpaces,
       };
     });
   }
@@ -272,7 +463,12 @@ export function createWebexClient(opts: WebexOpts) {
       }
 
       const space = await webex.rooms.create(body);
-      return normalizeSpace(space);
+      const normalized = normalizeSpace(space);
+      const cached = toCachedSpace(normalized);
+      if (cached) {
+        await cacheSpaceMutation((record) => upsertCachedSpaces(record, [cached]));
+      }
+      return normalized;
     });
   }
 
@@ -701,6 +897,7 @@ export function createWebexClient(opts: WebexOpts) {
     deleteSpace,
     getSpaceMeetingInfo,
     searchSpaces,
+    ensureSpacesCacheFresh,
     createSpace,
     addMembership,
     listMemberships,

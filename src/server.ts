@@ -13,6 +13,8 @@ export function makeServer(opts: WebexOpts) {
 
   registerAllTools(server, client);
 
+  void client.ensureSpacesCacheFresh().catch(() => undefined);
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (server as any).server.oninitialized = async () => {
     server.sendToolListChanged();

@@ -286,6 +286,7 @@ Find user ivan@example.com and send them the message "Hello!"
 ## 7. Limitations
 
 - Message search works **within a single room only** (no global search API)
+- Room search has **no global Webex API** — `webex_search_spaces` may scan your room list on first use
 - `webex_search_messages` scans history page by page — can be slow in large rooms
 - The bot must be a **member** of a space to read or post messages
 - Dev tokens expire in ~12 hours; Bot tokens are long-lived

@@ -9,6 +9,52 @@ export const DEFAULT_REDIRECT_URI = "http://127.0.0.1:4321/oauth/callback";
 
 export const DEFAULT_TOKEN_PATH = join(homedir(), ".config", "webex-mcp", "tokens.json");
 
+export const DEFAULT_SPACES_CACHE_PATH = join(
+  homedir(),
+  ".config",
+  "webex-mcp",
+  "spaces-cache.json"
+);
+
+export const DEFAULT_SPACES_CACHE_TTL_DAYS = 30;
+
+export const DEFAULT_SPACES_CACHE_TTL_MS = DEFAULT_SPACES_CACHE_TTL_DAYS * 24 * 60 * 60 * 1000;
+
+export type SpacesCacheConfig = {
+  enabled: boolean;
+  cachePath: string;
+  ttlMs: number;
+  maxSpaces: number;
+};
+
+export function readSpacesCacheConfig(
+  overrides: Partial<SpacesCacheConfig> = {}
+): SpacesCacheConfig {
+  const ttlDays = process.env.WEBEX_SPACES_CACHE_TTL_DAYS;
+  const ttlHours = process.env.WEBEX_SPACES_CACHE_TTL_HOURS;
+  const maxSpaces = process.env.WEBEX_SPACES_CACHE_MAX;
+
+  let ttlMs = DEFAULT_SPACES_CACHE_TTL_MS;
+  if (ttlHours) {
+    ttlMs = Number.parseInt(ttlHours, 10) * 60 * 60 * 1000;
+  } else if (ttlDays) {
+    ttlMs = Number.parseInt(ttlDays, 10) * 24 * 60 * 60 * 1000;
+  }
+
+  return {
+    enabled: overrides.enabled ?? process.env.WEBEX_SPACES_CACHE !== "false",
+    cachePath: expandHome(
+      overrides.cachePath ??
+        process.env.WEBEX_SPACES_CACHE_PATH ??
+        DEFAULT_SPACES_CACHE_PATH
+    ),
+    ttlMs: overrides.ttlMs ?? ttlMs,
+    maxSpaces:
+      overrides.maxSpaces ??
+      (maxSpaces ? Number.parseInt(maxSpaces, 10) : 5000),
+  };
+}
+
 export function expandHome(path: string): string {
   if (path.startsWith("~/")) {
     return join(homedir(), path.slice(2));
