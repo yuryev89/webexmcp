@@ -1,6 +1,6 @@
 {
   "name": "@yuryev89/webex-mcp",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Webex MCP server exposing messaging tools over stdio",
   "type": "module",
   "main": "dist/cli.js",
