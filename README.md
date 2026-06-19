@@ -1,5 +1,9 @@
 # webex-mcp
 
+[![npm version](https://img.shields.io/npm/v/@yuryev89/webex-mcp)](https://www.npmjs.com/package/@yuryev89/webex-mcp)
+[![npm downloads](https://img.shields.io/npm/dm/@yuryev89/webex-mcp)](https://www.npmjs.com/package/@yuryev89/webex-mcp)
+[![license](https://img.shields.io/npm/l/@yuryev89/webex-mcp)](LICENSE)
+
 > MCP server for Cisco Webex Messaging — connect AI assistants to Webex spaces, messages, and people.
 
 Minimal MCP server that exposes Webex messaging tools over stdio. Works with Cursor, Claude Desktop, and other MCP clients.
