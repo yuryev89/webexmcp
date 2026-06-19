@@ -62,9 +62,29 @@ export function expandHome(path: string): string {
   return path;
 }
 
+/** Strip surrounding quotes Windows CMD includes when using set VAR="value". */
+export function normalizeEnvValue(value: string | undefined): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  if (
+    trimmed.length >= 2 &&
+    ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+      (trimmed.startsWith("'") && trimmed.endsWith("'")))
+  ) {
+    return trimmed.slice(1, -1);
+  }
+
+  return trimmed;
+}
+
 export function readOAuthConfig(overrides: Partial<OAuthConfig> = {}): OAuthConfig | null {
-  const clientId = overrides.clientId ?? process.env.WEBEX_CLIENT_ID;
-  const clientSecret = overrides.clientSecret ?? process.env.WEBEX_CLIENT_SECRET;
+  const clientId =
+    overrides.clientId ?? normalizeEnvValue(process.env.WEBEX_CLIENT_ID);
+  const clientSecret =
+    overrides.clientSecret ?? normalizeEnvValue(process.env.WEBEX_CLIENT_SECRET);
 
   if (!clientId || !clientSecret) {
     return null;
@@ -75,11 +95,16 @@ export function readOAuthConfig(overrides: Partial<OAuthConfig> = {}): OAuthConf
     clientSecret,
     redirectUri:
       overrides.redirectUri ??
-      process.env.WEBEX_REDIRECT_URI ??
+      normalizeEnvValue(process.env.WEBEX_REDIRECT_URI) ??
       DEFAULT_REDIRECT_URI,
-    scopes: overrides.scopes ?? process.env.WEBEX_SCOPES ?? DEFAULT_SCOPES,
+    scopes:
+      overrides.scopes ??
+      normalizeEnvValue(process.env.WEBEX_SCOPES) ??
+      DEFAULT_SCOPES,
     tokenPath: expandHome(
-      overrides.tokenPath ?? process.env.WEBEX_TOKEN_PATH ?? DEFAULT_TOKEN_PATH
+      overrides.tokenPath ??
+        normalizeEnvValue(process.env.WEBEX_TOKEN_PATH) ??
+        DEFAULT_TOKEN_PATH
     ),
     fedramp: overrides.fedramp ?? process.env.WEBEX_FEDRAMP === "true",
   };

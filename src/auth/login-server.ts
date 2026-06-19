@@ -43,6 +43,13 @@ export async function runOAuthLogin(
 
   console.error(`[webex-mcp] Open this URL in your browser to authenticate:\n${authorizeUrl}`);
 
+  if (process.platform === "win32") {
+    console.error(
+      "[webex-mcp] Windows: if the browser shows an OAuth error, copy the URL above " +
+        "and paste it into the address bar (do not rely on auto-open)."
+    );
+  }
+
   if (options.openBrowser) {
     await tryOpenBrowser(authorizeUrl);
   }
@@ -161,18 +168,23 @@ export async function tryOpenBrowser(url: string): Promise<void> {
   const { promisify } = await import("node:util");
   const execFileAsync = promisify(execFile);
 
-  const platform = process.platform;
-  const command =
-    platform === "darwin"
-      ? "open"
-      : platform === "win32"
-        ? "cmd"
-        : "xdg-open";
-  const args =
-    platform === "win32" ? ["/c", "start", "", url] : [url];
-
   try {
-    await execFileAsync(command, args);
+    if (process.platform === "darwin") {
+      await execFileAsync("open", [url]);
+      return;
+    }
+
+    if (process.platform === "win32") {
+      // cmd.exe "start" truncates URLs at "&" — use PowerShell instead.
+      await execFileAsync(
+        "powershell",
+        ["-NoProfile", "-NonInteractive", "-Command", `Start-Process ${JSON.stringify(url)}`],
+        { windowsHide: true }
+      );
+      return;
+    }
+
+    await execFileAsync("xdg-open", [url]);
   } catch {
     // Browser open is best-effort; URL is already printed to stderr.
   }
