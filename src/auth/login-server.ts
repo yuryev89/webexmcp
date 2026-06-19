@@ -1,9 +1,11 @@
 import { randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { URL } from "node:url";
-import { buildAuthorizeUrl, exchangeCode, formatOAuthCallbackError, parseCallbackQuery } from "./oauth.js";
+import { buildAuthorizeUrl, exchangeCode, formatOAuthCallbackError } from "./oauth.js";
 import { TokenStore } from "./token-store.js";
 import type { OAuthConfig } from "./types.js";
+
+const LOGIN_TIMEOUT_MS = 10 * 60 * 1000;
 
 function htmlPage(title: string, body: string): string {
   return `<!DOCTYPE html>
@@ -21,13 +23,23 @@ function sendHtml(res: ServerResponse, status: number, title: string, body: stri
 
 export async function runOAuthLogin(
   config: OAuthConfig,
-  options: { openBrowser?: boolean } = {}
+  options: {
+    openBrowser?: boolean;
+    debug?: boolean;
+    onReady?: (authorizeUrl: string, callbackBaseUrl: string) => void;
+  } = {}
 ): Promise<string> {
   const redirectUrl = new URL(config.redirectUri);
   const callbackPath = redirectUrl.pathname || "/oauth/callback";
   const state = randomBytes(24).toString("hex");
   const authorizeUrl = buildAuthorizeUrl(config, state);
   const store = new TokenStore(config.tokenPath);
+
+  const log = (...args: unknown[]) => {
+    if (options.debug) {
+      console.error("[webex-mcp:login]", ...args);
+    }
+  };
 
   console.error(`[webex-mcp] Open this URL in your browser to authenticate:\n${authorizeUrl}`);
 
@@ -36,12 +48,38 @@ export async function runOAuthLogin(
   }
 
   await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const portToken = redirectUrl.port;
+    const listenPort = portToken === "0" ? 0 : Number(portToken) || 80;
+
+    const finish = (action: () => void) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      server.close();
+      action();
+    };
+
+    const timeout = setTimeout(() => {
+      finish(() => {
+        reject(
+          new Error(
+            "OAuth login timed out after 10 minutes. Run `webex-mcp login` again."
+          )
+        );
+      });
+    }, LOGIN_TIMEOUT_MS);
+
     const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
       try {
         if (!req.url) {
           sendHtml(res, 400, "Bad Request", "Missing request URL.");
           return;
         }
+
+        log("request", req.method, req.url);
 
         const requestUrl = new URL(req.url, config.redirectUri);
 
@@ -50,23 +88,42 @@ export async function runOAuthLogin(
           return;
         }
 
-        const parsed = parseCallbackQuery(requestUrl.searchParams);
-        if ("error" in parsed) {
-          const message = formatOAuthCallbackError(parsed.error, config.scopes);
+        const oauthError = requestUrl.searchParams.get("error");
+        if (oauthError) {
+          const description = requestUrl.searchParams.get("error_description");
+          const rawError = description ? `${oauthError}: ${description}` : oauthError;
+          const message = formatOAuthCallbackError(rawError, config.scopes);
           sendHtml(res, 400, "Authentication Failed", message);
-          reject(new Error(message));
+          finish(() => reject(new Error(message)));
+          return;
+        }
+
+        const code = requestUrl.searchParams.get("code");
+        if (!code) {
+          sendHtml(
+            res,
+            200,
+            "Waiting for authentication",
+            "Complete sign-in in your browser. You can close this tab once authentication succeeds."
+          );
           return;
         }
 
         const returnedState = requestUrl.searchParams.get("state");
         if (!returnedState || returnedState !== state) {
-          const message = "Invalid or expired OAuth state. Run `webex-mcp login` again.";
-          sendHtml(res, 400, "Authentication Failed", message);
-          reject(new Error(message));
+          log("state mismatch", { expected: state, received: returnedState });
+          sendHtml(
+            res,
+            400,
+            "Authentication Failed",
+            "This callback does not match the current login session. Close this tab, return to your terminal, " +
+              "and open the authorize URL shown there. If you started login more than once, only the latest " +
+              "session is valid — run `webex-mcp login` again if needed."
+          );
           return;
         }
 
-        const tokens = await exchangeCode(config, parsed.code);
+        const tokens = await exchangeCode(config, code);
         await store.save(tokens);
 
         sendHtml(
@@ -75,20 +132,24 @@ export async function runOAuthLogin(
           "Webex authentication complete",
           "You can close this window and return to your terminal."
         );
-        resolve();
+        finish(() => resolve());
       } catch (err) {
         const message = err instanceof Error ? err.message : "Unknown error";
         sendHtml(res, 500, "Authentication Failed", message);
-        reject(err);
-      } finally {
-        server.close();
+        finish(() => reject(err instanceof Error ? err : new Error(message)));
       }
     });
 
-    server.on("error", reject);
+    server.on("error", (err) => {
+      finish(() => reject(err));
+    });
 
-    server.listen(Number(redirectUrl.port) || 80, redirectUrl.hostname, () => {
-      void authorizeUrl;
+    server.listen(listenPort, redirectUrl.hostname, () => {
+      const address = server.address();
+      const boundPort =
+        address && typeof address === "object" ? address.port : listenPort;
+      const callbackBaseUrl = `${redirectUrl.protocol}//${redirectUrl.hostname}:${boundPort}${callbackPath}`;
+      options.onReady?.(authorizeUrl, callbackBaseUrl);
     });
   });
 

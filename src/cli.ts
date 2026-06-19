@@ -40,7 +40,11 @@ async function runServer(argv: {
   }
 }
 
-async function runLogin(argv: { fedramp: boolean; noOpen: boolean }) {
+async function runLogin(argv: {
+  fedramp: boolean;
+  noOpen: boolean;
+  debug: boolean;
+}) {
   const config = readOAuthConfig({ fedramp: argv.fedramp });
   if (!config) {
     console.error(
@@ -49,7 +53,10 @@ async function runLogin(argv: { fedramp: boolean; noOpen: boolean }) {
     process.exit(1);
   }
 
-  await runOAuthLogin(config, { openBrowser: !argv.noOpen });
+  await runOAuthLogin(config, {
+    openBrowser: !argv.noOpen,
+    debug: argv.debug,
+  });
   console.error("[webex-mcp] Authentication successful. Tokens saved.");
 }
 
@@ -116,11 +123,17 @@ const argv = await yargs(hideBin(process.argv))
           type: "boolean",
           default: false,
           describe: "Do not try to open the browser automatically",
+        })
+        .option("debug", {
+          type: "boolean",
+          default: false,
+          describe: "Log OAuth callback requests to stderr",
         }),
     async (args) => {
       await runLogin({
         fedramp: args.fedramp,
         noOpen: args["no-open"],
+        debug: args.debug,
       });
     }
   )
