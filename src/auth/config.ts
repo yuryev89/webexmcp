@@ -68,7 +68,7 @@ export function normalizeEnvValue(value: string | undefined): string | undefined
     return undefined;
   }
 
-  const trimmed = value.trim();
+  const trimmed = value.trim().replace(/\r/g, "");
   if (
     trimmed.length >= 2 &&
     ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||

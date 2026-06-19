@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it, mock } from "node:test";
 import { DEFAULT_SCOPES } from "../src/auth/config.js";
-import { runOAuthLogin } from "../src/auth/login-server.js";
+import { runOAuthLogin, formatWindowsUrlShortcut } from "../src/auth/login-server.js";
 import { TokenStore } from "../src/auth/token-store.js";
 import type { OAuthConfig } from "../src/auth/types.js";
 
@@ -117,5 +117,16 @@ describe("runOAuthLogin", { concurrency: 1 }, () => {
 
     await fetch(`${callbackBaseUrl}?error=access_denied`);
     await rejection;
+  });
+});
+
+describe("formatWindowsUrlShortcut", () => {
+  it("embeds the full authorize URL for Windows InternetShortcut files", () => {
+    const url =
+      "https://webexapis.com/v1/authorize?response_type=code&client_id=abc&redirect_uri=http%3A%2F%2F127.0.0.1%3A4321%2Foauth%2Fcallback&state=xyz&scope=spark%3Arooms_read";
+    const content = formatWindowsUrlShortcut(url);
+
+    assert.match(content, /^\[InternetShortcut\]/);
+    assert.ok(content.includes(`URL=${url}`));
   });
 });

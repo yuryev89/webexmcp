@@ -1,5 +1,8 @@
 import { randomBytes } from "node:crypto";
+import { writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { URL } from "node:url";
 import { buildAuthorizeUrl, exchangeCode, formatOAuthCallbackError } from "./oauth.js";
 import { TokenStore } from "./token-store.js";
@@ -19,6 +22,37 @@ function sendHtml(res: ServerResponse, status: number, title: string, body: stri
   const content = htmlPage(title, body);
   res.writeHead(status, { "Content-Type": "text/html; charset=utf-8" });
   res.end(content);
+}
+
+/** Windows Internet Shortcut — opens the full URL without cmd.exe truncating at "&". */
+export function formatWindowsUrlShortcut(url: string): string {
+  return `[InternetShortcut]\r\nURL=${url}\r\n`;
+}
+
+export async function writeWindowsAuthorizeShortcut(url: string): Promise<string> {
+  const filePath = join(
+    tmpdir(),
+    `webex-mcp-oauth-${randomBytes(4).toString("hex")}.url`
+  );
+  await writeFile(filePath, formatWindowsUrlShortcut(url), "utf8");
+  return filePath;
+}
+
+async function openWindowsAuthorizeShortcut(shortcutPath: string): Promise<void> {
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const execFileAsync = promisify(execFile);
+
+  await execFileAsync(
+    "powershell",
+    [
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      `Start-Process ${JSON.stringify(shortcutPath)}`,
+    ],
+    { windowsHide: true }
+  );
 }
 
 export async function runOAuthLogin(
@@ -43,15 +77,25 @@ export async function runOAuthLogin(
 
   console.error(`[webex-mcp] Open this URL in your browser to authenticate:\n${authorizeUrl}`);
 
+  let windowsShortcutPath: string | undefined;
   if (process.platform === "win32") {
+    windowsShortcutPath = await writeWindowsAuthorizeShortcut(authorizeUrl);
     console.error(
-      "[webex-mcp] Windows: if the browser shows an OAuth error, copy the URL above " +
-        "and paste it into the address bar (do not rely on auto-open)."
+      "[webex-mcp] Windows: CMD wraps long URLs — do not copy from the console.\n" +
+        `Open this shortcut instead (double-click or Enter):\n${windowsShortcutPath}`
     );
   }
 
   if (options.openBrowser) {
-    await tryOpenBrowser(authorizeUrl);
+    if (windowsShortcutPath) {
+      try {
+        await openWindowsAuthorizeShortcut(windowsShortcutPath);
+      } catch {
+        // Shortcut path is printed; user can open it manually.
+      }
+    } else {
+      await tryOpenBrowser(authorizeUrl);
+    }
   }
 
   await new Promise<void>((resolve, reject) => {
@@ -175,10 +219,14 @@ export async function tryOpenBrowser(url: string): Promise<void> {
     }
 
     if (process.platform === "win32") {
-      // cmd.exe "start" truncates URLs at "&" — use PowerShell instead.
       await execFileAsync(
         "powershell",
-        ["-NoProfile", "-NonInteractive", "-Command", `Start-Process ${JSON.stringify(url)}`],
+        [
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          `Start-Process ${JSON.stringify(url)}`,
+        ],
         { windowsHide: true }
       );
       return;
