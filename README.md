@@ -1,5 +1,7 @@
 # webex-mcp
 
+Maintainers: see [Publishing a release](docs/RELEASING.md) for GitHub Releases and npm setup.
+
 [![npm version](https://img.shields.io/npm/v/@yuryev89/webex-mcp)](https://www.npmjs.com/package/@yuryev89/webex-mcp)
 [![npm downloads](https://img.shields.io/npm/dm/@yuryev89/webex-mcp)](https://www.npmjs.com/package/@yuryev89/webex-mcp)
 [![license](https://img.shields.io/npm/l/@yuryev89/webex-mcp)](LICENSE)

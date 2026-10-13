@@ -1,0 +1,59 @@
+name: Publish to npm
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'yuryev89/webexmcp' && !github.event.release.prerelease
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+      - name: Use npm with trusted publishing support
+        run: npm install --global npm@11.12.1
+      - name: Validate release version
+        run: node scripts/check-release.mjs
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Check CLI
+        run: node dist/cli.js --help
+      - name: Pack and verify publication contents
+        run: |
+          npm pack --json > "$RUNNER_TEMP/package-info.json"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync, appendFileSync } from 'node:fs';
+          const [pkg] = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/package-info.json`, 'utf8'));
+          const files = pkg.files.map(file => file.path);
+          for (const required of ['package.json', 'README.md', 'dist/cli.js', 'dist/cli.d.ts']) {
+            assert(files.includes(required), `Missing ${required}`);
+          }
+          assert(files.every(path => path.startsWith('dist/') || /^(package\.json|README\.md|LICEN[CS]E(?:\.md)?)$/.test(path)), 'Unexpected package contents');
+          assert.match(pkg.filename, /^[a-zA-Z0-9._-]+\.tgz$/);
+          appendFileSync(process.env.GITHUB_ENV, `PACKAGE_FILE=${pkg.filename}\n`);
+          NODE
+      - name: Publish verified tarball with OIDC
+        run: npm publish "$PACKAGE_FILE" --access public --tag latest
