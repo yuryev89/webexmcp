@@ -5,7 +5,7 @@ MCP server for integrating Cisco Webex Messaging with AI assistants (Cursor, Cla
 ## 1. What It Is
 
 - MCP server for Webex Teams / Messaging
-- Lets an AI agent in Cursor read spaces, search messages, create rooms, invite people, and send messages
+- Lets an AI agent in Cursor read spaces, search messages, view image attachments, create rooms, invite people, and send messages
 
 ## 2. Requirements
 
@@ -214,6 +214,16 @@ Find user ivan@example.com and send them the message "Hello!"
 
 `webex_get_people` → `webex_create_message` with `toPersonEmail`
 
+### Read images attached to a message
+
+```
+Open the latest screenshot in the "Project Alpha" space and describe it.
+```
+
+`webex_search_spaces` → `webex_get_messages` (look for `files[]`) → `webex_get_message_images`
+
+Do **not** fetch the `files[]` URL with a generic HTTP tool — those contents URLs require the Webex bearer token. `webex_get_message_images` downloads PNG/JPEG/GIF/WebP as inline ImageContent so the model can see them.
+
 ## 6. Tool Reference
 
 ### Spaces
@@ -240,6 +250,9 @@ Find user ivan@example.com and send them the message "Hello!"
 | `webex_list_direct_messages` | List messages in a 1:1 room |
 | `webex_create_attachment_action` | Submit a card form action |
 | `webex_get_attachment_action` | Get attachment action details |
+| `webex_get_file_details` | Filename / type / size for a `files[]` URL |
+| `webex_download_file` | Download one file; images are inlined for vision |
+| `webex_get_message_images` | Inline all image attachments on a message |
 
 ### Memberships
 
@@ -292,6 +305,7 @@ Find user ivan@example.com and send them the message "Hello!"
 - Dev tokens expire in ~12 hours; Bot tokens are long-lived
 - Webex API rate limit: ~300 req/min
 - Admin APIs (people CRUD, ECM folders, events audit, room tabs) are not included in this release
+- Image inlining supports PNG, JPEG, GIF, and WebP up to 10 MB; other attachments are listed but not inlined
 
 ## 8. Troubleshooting
 
@@ -306,6 +320,7 @@ Find user ivan@example.com and send them the message "Hello!"
 | 403 Forbidden | Bot is missing scopes — check Step 2 |
 | Empty spaces list | Bot is not in any room; create one via `webex_create_space` |
 | Can't read messages | Bot is not a member of that room — add via `webex_add_membership` |
+| Agent cannot see chat screenshots | Use `webex_get_message_images` with the message ID; do not open the `files[]` URL directly |
 | Search found nothing | Increase `scanLimit`; verify `roomId`; query is case-insensitive |
 | FedRAMP environment | Add `--fedramp` to args |
 

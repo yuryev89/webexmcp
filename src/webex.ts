@@ -880,6 +880,14 @@ export function createWebexClient(opts: WebexOpts) {
     });
   }
 
+  async function getFileDetails(fileUrl: string) {
+    return withAuthRetry(() => rest.headContents(fileUrl));
+  }
+
+  async function downloadFile(fileUrl: string) {
+    return withAuthRetry(() => rest.getContents(fileUrl));
+  }
+
   return {
     listSpaces,
     getSpace,
@@ -919,6 +927,8 @@ export function createWebexClient(opts: WebexOpts) {
     getWebhook,
     updateWebhook,
     deleteWebhook,
+    getFileDetails,
+    downloadFile,
   };
 }
 

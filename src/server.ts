@@ -7,7 +7,7 @@ export function makeServer(opts: WebexOpts) {
   const client = createWebexClient(opts);
 
   const server = new McpServer(
-    { name: "webex-mcp", version: "0.2.2" },
+    { name: "webex-mcp", version: "0.2.6" },
     { capabilities: { tools: {} } }
   );
 

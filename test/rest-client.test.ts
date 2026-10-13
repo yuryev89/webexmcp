@@ -2,13 +2,24 @@ import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it, mock } from "node:test";
 import { createRestClient } from "../src/rest-client.js";
 
-function mockResponse(status: number, body: unknown, statusText = "OK") {
+function mockResponse(
+  status: number,
+  body: unknown,
+  statusText = "OK",
+  headers?: Record<string, string>,
+  binary?: Buffer
+) {
+  const encoded =
+    binary ?? Buffer.from(typeof body === "string" ? body : JSON.stringify(body));
   return {
     ok: status >= 200 && status < 300,
     status,
     statusText,
+    headers: new Headers(headers),
     json: async () => body,
-    text: async () => JSON.stringify(body),
+    text: async () => (binary ? encoded.toString("utf8") : JSON.stringify(body)),
+    arrayBuffer: async () =>
+      encoded.buffer.slice(encoded.byteOffset, encoded.byteOffset + encoded.byteLength),
   };
 }
 
@@ -106,6 +117,99 @@ describe("rest-client", () => {
     await assert.rejects(
       () => client.getSpaceMeetingInfo("missing"),
       /room not found/
+    );
+  });
+
+  it("headContents falls back to GET on 405", async () => {
+    let call = 0;
+    fetchMock.mock.mockImplementation(async (_url: string | URL, init?: RequestInit) => {
+      call += 1;
+      if (call === 1) {
+        assert.equal(init?.method, "HEAD");
+        return mockResponse(405, { message: "Method Not Allowed" }, "Method Not Allowed");
+      }
+      assert.equal(init?.method, "GET");
+      return mockResponse(200, null, "OK", {
+        "content-type": "image/jpeg",
+        "content-disposition": 'attachment; filename="a.jpg"',
+      });
+    });
+
+    const client = createRestClient({ getAccessToken: () => "test-token" });
+    const details = await client.headContents("https://webexapis.com/v1/contents/abc");
+    assert.equal(details.contentType, "image/jpeg");
+    assert.equal(details.filename, "a.jpg");
+    assert.equal(call, 2);
+  });
+
+  it("headContents reads filename and content-type", async () => {
+    fetchMock.mock.mockImplementation(async (url: string | URL, init?: RequestInit) => {
+      assert.equal(String(url), "https://webexapis.com/v1/contents/abc");
+      assert.equal(init?.method, "HEAD");
+      return mockResponse(200, null, "OK", {
+        "content-type": "image/png",
+        "content-length": "12",
+        "content-disposition": 'attachment; filename="shot.png"',
+      });
+    });
+
+    const client = createRestClient({ getAccessToken: () => "test-token" });
+    const details = await client.headContents(
+      "https://webexapis.com/v1/contents/abc"
+    );
+    assert.equal(details.filename, "shot.png");
+    assert.equal(details.contentType, "image/png");
+    assert.equal(details.contentLength, 12);
+  });
+
+  it("getContents returns base64 body for images", async () => {
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    fetchMock.mock.mockImplementation(async (_url: string | URL, init?: RequestInit) => {
+      assert.equal(init?.method, "GET");
+      assert.equal(
+        (init?.headers as Record<string, string>).Authorization,
+        "Bearer test-token"
+      );
+      return mockResponse(
+        200,
+        null,
+        "OK",
+        {
+          "content-type": "image/png",
+          "content-disposition": 'attachment; filename="shot.png"',
+        },
+        png
+      );
+    });
+
+    const client = createRestClient({ getAccessToken: () => "test-token" });
+    const file = await client.getContents("https://webexapis.com/v1/contents/abc");
+    assert.equal(file.filename, "shot.png");
+    assert.equal(file.base64, png.toString("base64"));
+    assert.equal(file.size, png.length);
+  });
+
+  it("getContents rejects non-contents URLs", async () => {
+    const client = createRestClient({ getAccessToken: () => "test-token" });
+    await assert.rejects(
+      () => client.getContents("https://example.com/secret.png"),
+      /contents URL/
+    );
+    assert.equal(fetchMock.mock.calls.length, 0);
+  });
+
+  it("getContents rejects oversized content-length", async () => {
+    fetchMock.mock.mockImplementation(async () =>
+      mockResponse(200, null, "OK", {
+        "content-type": "image/png",
+        "content-length": String(20 * 1024 * 1024),
+      })
+    );
+
+    const client = createRestClient({ getAccessToken: () => "test-token" });
+    await assert.rejects(
+      () => client.getContents("https://webexapis.com/v1/contents/huge"),
+      /download limit/
     );
   });
 });
