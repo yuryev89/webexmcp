@@ -10,7 +10,7 @@ Minimal MCP server that exposes Webex messaging tools over stdio. Works with Cur
 
 ## Features
 
-- Full core Webex Messaging API coverage: spaces, messages, memberships, people, teams, webhooks, and attachment actions
+- Full core Webex Messaging API coverage: spaces, messages, memberships, people, teams, webhooks, attachment actions, and file downloads
 - Search spaces and messages by keyword (client-side scan)
 - Bearer token authentication via `webex-node` SDK with REST fallback for select endpoints
 - OAuth 2.0 Integration login with automatic token refresh
@@ -125,6 +125,14 @@ Run `npx -y @yuryev89/webex-mcp@latest login` once before starting Cursor (with 
 | `webex_create_attachment_action` | Submit an attachment card action |
 | `webex_get_attachment_action` | Get attachment action details |
 
+### Files
+
+| Tool | Description |
+|------|-------------|
+| `webex_get_file_details` | Metadata (filename, type, size) for a message `files[]` URL |
+| `webex_download_file` | Download a file; images are returned as inline ImageContent |
+| `webex_get_message_images` | Download all image attachments on a message for LLM vision |
+
 ### Memberships
 
 | Tool | Description |
@@ -173,6 +181,8 @@ Run `npx -y @yuryev89/webex-mcp@latest login` once before starting Cursor (with 
 - Search scans message history page by page — may be slow in large spaces
 - Bot must be a **member** of a space to read or post messages
 - OAuth uses user-delegated tokens; Bot mode uses a long-lived Bot token
+- Message `files[]` URLs require the access token; use `webex_get_message_images` / `webex_download_file` instead of fetching the URL directly
+- Inline vision images are limited to PNG, JPEG, GIF, and WebP, max 10 MB each
 
 ## Authentication modes
 

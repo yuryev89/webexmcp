@@ -1,4 +1,12 @@
 import { getApiBaseUrl } from "./auth/config.js";
+import {
+  MAX_FILE_BYTES,
+  assertWithinSizeLimit,
+  detailsFromHeaders,
+  resolveContentsUrl,
+  type DownloadedFile,
+  type FileDetails,
+} from "./file-content.js";
 
 export type RestClientOpts = {
   getAccessToken: () => string;
@@ -102,10 +110,65 @@ export function createRestClient(opts: RestClientOpts) {
     return request<{ deleted: boolean }>("DELETE", `/teams/${encodeURIComponent(teamId)}`);
   }
 
+  async function binaryRequest(method: "GET" | "HEAD", fileUrl: string): Promise<Response> {
+    const url = resolveContentsUrl(fileUrl, opts.fedramp ?? false);
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${opts.getAccessToken()}`,
+    };
+    const init: RequestInit = { method, headers };
+    let response = await fetch(url, init);
+
+    if (isAuthStatus(response.status) && opts.refreshToken) {
+      await opts.refreshToken();
+      headers.Authorization = `Bearer ${opts.getAccessToken()}`;
+      response = await fetch(url, { ...init, headers });
+    }
+
+    return response;
+  }
+
+  async function headContents(fileUrl: string): Promise<FileDetails> {
+    const url = resolveContentsUrl(fileUrl, opts.fedramp ?? false);
+    let response = await binaryRequest("HEAD", fileUrl);
+    if (response.status === 405) {
+      response = await binaryRequest("GET", fileUrl);
+    }
+    if (!response.ok) {
+      throw new Error(await parseErrorBody(response));
+    }
+    return detailsFromHeaders(url, response.headers);
+  }
+
+  async function getContents(
+    fileUrl: string,
+    maxBytes = MAX_FILE_BYTES
+  ): Promise<DownloadedFile> {
+    const url = resolveContentsUrl(fileUrl, opts.fedramp ?? false);
+    const response = await binaryRequest("GET", fileUrl);
+    if (!response.ok) {
+      throw new Error(await parseErrorBody(response));
+    }
+
+    const details = detailsFromHeaders(url, response.headers);
+    assertWithinSizeLimit(details.contentLength, maxBytes);
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    assertWithinSizeLimit(buffer.length, maxBytes);
+
+    const downloaded: DownloadedFile = {
+      ...details,
+      size: buffer.length,
+      base64: buffer.toString("base64"),
+    };
+    return downloaded;
+  }
+
   return {
     getSpaceMeetingInfo,
     listDirectMessages,
     deleteTeam,
+    headContents,
+    getContents,
   };
 }
 
