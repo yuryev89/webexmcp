@@ -8,7 +8,7 @@ Maintainers: see [Publishing a release](docs/RELEASING.md) for GitHub Releases a
 
 > MCP server for Cisco Webex Messaging — connect AI assistants to Webex spaces, messages, and people.
 
-Minimal MCP server that exposes Webex messaging tools over stdio. Works with Cursor, Claude Desktop, and other MCP clients.
+Minimal MCP server that exposes Webex messaging tools over stdio. Works with Cursor, Claude Desktop, Codex, Claude Code, OpenCode, and other MCP clients.
 
 ## Features
 
@@ -88,6 +88,126 @@ npx -y @yuryev89/webex-mcp@latest
 ```
 
 Run `npx -y @yuryev89/webex-mcp@latest login` once before starting Cursor (with `WEBEX_CLIENT_ID` and `WEBEX_CLIENT_SECRET` set).
+
+## Codex configuration
+
+Add one of the following configurations to `~/.codex/config.toml` (merge it with any existing configuration).
+
+### Bot token
+
+```toml
+[mcp_servers.webex]
+command = "npx"
+args = ["-y", "@yuryev89/webex-mcp@latest"]
+
+[mcp_servers.webex.env]
+WEBEX_ACCESS_TOKEN = "YOUR_BOT_ACCESS_TOKEN"
+```
+
+### OAuth Integration
+
+Complete [Option B — OAuth Integration](#option-b--oauth-integration) first, then use:
+
+```toml
+[mcp_servers.webex]
+command = "npx"
+args = ["-y", "@yuryev89/webex-mcp@latest"]
+
+[mcp_servers.webex.env]
+WEBEX_CLIENT_ID = "YOUR_CLIENT_ID"
+WEBEX_CLIENT_SECRET = "YOUR_CLIENT_SECRET"
+```
+
+Alternatively, keep credentials in your shell environment and replace the `[mcp_servers.webex.env]` table with `env_vars = ["WEBEX_ACCESS_TOKEN"]` inside `[mcp_servers.webex]` (or `["WEBEX_CLIENT_ID", "WEBEX_CLIENT_SECRET"]` for OAuth). Start Codex from that shell.
+
+Run `codex mcp list` to verify registration, then use `/mcp` in Codex to inspect the active server.
+
+Reference: [Codex MCP documentation](https://developers.openai.com/codex/mcp).
+
+## Claude Code configuration
+
+The following commands register Webex for your user account across projects. Choose one authentication mode.
+
+### Bot token
+
+```bash
+claude mcp add --scope user \
+  --env WEBEX_ACCESS_TOKEN=YOUR_BOT_ACCESS_TOKEN \
+  --transport stdio webex -- npx -y @yuryev89/webex-mcp@latest
+```
+
+### OAuth Integration
+
+Complete [Option B — OAuth Integration](#option-b--oauth-integration) first, then register:
+
+```bash
+claude mcp add --scope user \
+  --env WEBEX_CLIENT_ID=YOUR_CLIENT_ID \
+  --env WEBEX_CLIENT_SECRET=YOUR_CLIENT_SECRET \
+  --transport stdio webex -- npx -y @yuryev89/webex-mcp@latest
+```
+
+Run `claude mcp list` or `claude mcp get webex` to check the connection. Inside Claude Code, use `/mcp` to inspect status and tools. To switch modes, remove the existing entry with `claude mcp remove --scope user webex`, then register it again.
+
+Reference: [Claude Code MCP documentation](https://code.claude.com/docs/en/mcp).
+
+## OpenCode configuration
+
+Merge one of these examples into `opencode.json` in your project, or `~/.config/opencode/opencode.json` for all projects.
+
+### Bot token
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "webex": {
+      "type": "local",
+      "command": ["npx", "-y", "@yuryev89/webex-mcp@latest"],
+      "enabled": true,
+      "environment": {
+        "WEBEX_ACCESS_TOKEN": "{env:WEBEX_ACCESS_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+Set `WEBEX_ACCESS_TOKEN` in your environment before launching OpenCode; `{env:...}` reads that variable.
+
+### OAuth Integration
+
+Complete [Option B — OAuth Integration](#option-b--oauth-integration) first, then use:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "webex": {
+      "type": "local",
+      "command": ["npx", "-y", "@yuryev89/webex-mcp@latest"],
+      "enabled": true,
+      "environment": {
+        "WEBEX_CLIENT_ID": "{env:WEBEX_CLIENT_ID}",
+        "WEBEX_CLIENT_SECRET": "{env:WEBEX_CLIENT_SECRET}"
+      }
+    }
+  }
+}
+```
+
+Keep `WEBEX_CLIENT_ID` and `WEBEX_CLIENT_SECRET` exported when launching OpenCode. Run `opencode mcp list` to check the server.
+
+References: [OpenCode MCP documentation](https://opencode.ai/docs/mcp-servers/) and [configuration](https://opencode.ai/docs/config/).
+
+## Client setup notes
+
+- Each client starts the server as a local stdio process; no separate server terminal or HTTP URL is needed.
+- OAuth login is handled by `npx -y @yuryev89/webex-mcp@latest login`. Run it under the same OS user and token-store configuration as the client. Client-native MCP OAuth login commands do not replace this step.
+- For OAuth, remove `WEBEX_ACCESS_TOKEN` from the client configuration, inherited environment, and any loaded `.env`: a static token takes precedence over saved OAuth tokens.
+- Replace credential placeholders locally. Keep real credentials out of version control; CLI arguments may also be retained in shell history.
+- Ensure Node.js and `npx` are available to the client, then restart it after configuration changes.
+- Try: **"Use Webex to list my spaces."** For a message search, identify a space first; `webex_search_messages` searches one space at a time.
 
 ## CLI options
 
@@ -211,3 +331,4 @@ npm test
 ## License
 
 MIT
+
