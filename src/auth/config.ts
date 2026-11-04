@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { OAuthConfig } from "./types.js";
 
 export const DEFAULT_SCOPES =
@@ -53,6 +53,15 @@ export function readSpacesCacheConfig(
       overrides.maxSpaces ??
       (maxSpaces ? Number.parseInt(maxSpaces, 10) : 5000),
   };
+}
+
+export const DEFAULT_DOWNLOAD_DIR = join(homedir(), ".cache", "webex-mcp", "downloads");
+
+/** Root folder for saved attachments: `WEBEX_DOWNLOAD_DIR` or the default cache folder. */
+export function resolveDownloadDir(): string {
+  return resolve(
+    expandHome(normalizeEnvValue(process.env.WEBEX_DOWNLOAD_DIR) ?? DEFAULT_DOWNLOAD_DIR)
+  );
 }
 
 export function expandHome(path: string): string {

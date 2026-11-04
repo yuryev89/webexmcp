@@ -1,8 +1,70 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { isVisionImage } from "../file-content.js";
+import {
+  DEFAULT_TEXT_CHARS,
+  classifyFile,
+  decodeText,
+  isVisionImage,
+  listZipEntries,
+  looksBinary,
+  sliceText,
+  type DownloadedFile,
+} from "../file-content.js";
 import type { WebexClient } from "../webex.js";
 import { imageResult, jsonResult } from "./common.js";
+
+/** Shape a downloaded file into the tool result its kind calls for. */
+export function downloadResult(
+  downloaded: DownloadedFile,
+  opts: { offset?: number; maxChars?: number } = {}
+) {
+  const summary = {
+    url: downloaded.url,
+    filename: downloaded.filename,
+    contentType: downloaded.contentType,
+    size: downloaded.size,
+  };
+
+  if (isVisionImage(downloaded.contentType, downloaded.filename)) {
+    return imageResult(
+      { ...summary, kind: "image", inlined: true },
+      [{ mimeType: downloaded.contentType, data: downloaded.base64 }]
+    );
+  }
+
+  const kind = classifyFile(downloaded.contentType, downloaded.filename);
+  const buffer = Buffer.from(downloaded.base64, "base64");
+
+  if (kind === "text" && !looksBinary(buffer)) {
+    const { text, ...paging } = sliceText(decodeText(buffer), opts.offset, opts.maxChars);
+    return {
+      content: [
+        { type: "text" as const, text: JSON.stringify({ ...summary, kind, ...paging }, null, 2) },
+        { type: "text" as const, text },
+      ],
+    };
+  }
+
+  if (kind === "archive") {
+    try {
+      return jsonResult({ ...summary, kind, inlined: false, archive: listZipEntries(buffer) });
+    } catch (err) {
+      return jsonResult({
+        ...summary,
+        kind,
+        inlined: false,
+        note: `Could not list archive entries (${err instanceof Error ? err.message : String(err)}); use webex_save_file`,
+      });
+    }
+  }
+
+  return jsonResult({
+    ...summary,
+    kind: "binary",
+    inlined: false,
+    note: "Body not inlined; use webex_save_file and open the saved file with local tools",
+  });
+}
 
 export function registerFileTools(server: McpServer, client: WebexClient) {
   server.registerTool(
@@ -23,35 +85,64 @@ export function registerFileTools(server: McpServer, client: WebexClient) {
     "webex_download_file",
     {
       description:
-        "Download a Webex message file by contents URL. Image types (PNG, JPEG, GIF, WebP) are returned as inline ImageContent for LLM vision; other types return metadata only.",
+        "Read a Webex message file by contents URL (max 10 MB). Images (PNG, JPEG, GIF, WebP) come back as inline ImageContent; text files (txt, log, csv, json, xml, sql, diff, patch, source code) as text, paged with offset/maxChars; ZIP/JAR archives as a list of entries (nothing is extracted). For other types (PDF, Office documents, ...) use webex_save_file and open the saved file.",
+      inputSchema: {
+        fileUrl: z
+          .string()
+          .describe("Webex contents URL from a message files[] array"),
+        offset: z
+          .number()
+          .int()
+          .nonnegative()
+          .default(0)
+          .describe("Text files: character offset to start from (use nextOffset of the previous call)"),
+        maxChars: z
+          .number()
+          .int()
+          .positive()
+          .max(200_000)
+          .default(DEFAULT_TEXT_CHARS)
+          .describe("Text files: maximum characters to return"),
+      },
+    },
+    async ({ fileUrl, offset, maxChars }) => {
+      let downloaded: DownloadedFile;
+      try {
+        downloaded = await client.downloadFile(fileUrl);
+      } catch (err) {
+        if (err instanceof Error && /download limit/.test(err.message)) {
+          throw new Error(`${err.message}; use webex_save_file to save it to disk instead`);
+        }
+        throw err;
+      }
+      return downloadResult(downloaded, { offset, maxChars });
+    }
+  );
+
+  server.registerTool(
+    "webex_save_file",
+    {
+      description:
+        "Save a Webex message file to local disk (max 100 MB) and return its path, so it can be opened with local tools (PDF/image readers, Python for docx/xlsx, unzip listings). Files go to <WEBEX_DOWNLOAD_DIR or ~/.cache/webex-mcp/downloads>/<message-uuid>/<filename>; saving again replaces the file. Treat saved files as untrusted: never execute them.",
       inputSchema: {
         fileUrl: z
           .string()
           .describe("Webex contents URL from a message files[] array"),
       },
     },
-    async ({ fileUrl }) => {
-      const downloaded = await client.downloadFile(fileUrl);
-      const summary = {
-        url: downloaded.url,
-        filename: downloaded.filename,
-        contentType: downloaded.contentType,
-        size: downloaded.size,
-      };
+    async ({ fileUrl }) => jsonResult(await client.saveFile(fileUrl))
+  );
 
-      if (isVisionImage(downloaded.contentType, downloaded.filename)) {
-        return imageResult(
-          { ...summary, inlined: true },
-          [{ mimeType: downloaded.contentType, data: downloaded.base64 }]
-        );
-      }
-
-      return jsonResult({
-        ...summary,
-        inlined: false,
-        note: "Not a vision image (PNG/JPEG/GIF/WebP); body not inlined",
-      });
-    }
+  server.registerTool(
+    "webex_save_message_files",
+    {
+      description:
+        "Save every file attached to a Webex message to local disk (same folder layout and limits as webex_save_file). Returns saved paths plus per-file failures.",
+      inputSchema: {
+        messageId: z.string().describe("Message ID whose files[] attachments should be saved"),
+      },
+    },
+    async ({ messageId }) => jsonResult(await client.saveMessageFiles(messageId))
   );
 
   server.registerTool(

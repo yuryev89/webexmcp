@@ -4,6 +4,13 @@ import { isAbsolute } from "node:path";
 import type { WebexClient } from "../webex.js";
 import { jsonResult } from "./common.js";
 
+const includeFileDetailsSchema = z
+  .boolean()
+  .default(false)
+  .describe(
+    "Add attachments[] (filename, contentType, size, kind) to messages with files; one HEAD request per file"
+  );
+
 export function validateDirectMessageParams(params: {
   personId?: string;
   personEmail?: string;
@@ -36,9 +43,10 @@ export function registerMessageTools(server: McpServer, client: WebexClient) {
         beforeMessage: z.string().optional().describe("List messages before this message ID"),
         mentionedPeople: z.string().optional().describe("Filter by mentioned people IDs"),
         max: z.number().int().positive().max(1000).default(50),
+        includeFileDetails: includeFileDetailsSchema,
       },
     },
-    async ({ roomId, messageId, before, beforeMessage, mentionedPeople, max }) => {
+    async ({ roomId, messageId, before, beforeMessage, mentionedPeople, max, includeFileDetails }) => {
       const params: {
         roomId?: string;
         messageId?: string;
@@ -52,7 +60,11 @@ export function registerMessageTools(server: McpServer, client: WebexClient) {
       if (before) params.before = before;
       if (beforeMessage) params.beforeMessage = beforeMessage;
       if (mentionedPeople) params.mentionedPeople = mentionedPeople;
-      return jsonResult(await client.getMessages(params));
+      const result = await client.getMessages(params);
+      if (includeFileDetails) {
+        return jsonResult({ ...result, messages: await client.addFileDetails(result.messages) });
+      }
+      return jsonResult(result);
     }
   );
 
@@ -179,9 +191,10 @@ export function registerMessageTools(server: McpServer, client: WebexClient) {
         parentId: z.string().optional().describe("Parent message ID to filter by"),
         personId: z.string().optional().describe("Person ID for the 1:1 room"),
         personEmail: z.string().optional().describe("Person email for the 1:1 room"),
+        includeFileDetails: includeFileDetailsSchema,
       },
     },
-    async ({ parentId, personId, personEmail }) => {
+    async ({ parentId, personId, personEmail, includeFileDetails }) => {
       validateDirectMessageParams({
         ...(personId ? { personId } : {}),
         ...(personEmail ? { personEmail } : {}),
@@ -194,7 +207,11 @@ export function registerMessageTools(server: McpServer, client: WebexClient) {
       if (parentId) params.parentId = parentId;
       if (personId) params.personId = personId;
       if (personEmail) params.personEmail = personEmail;
-      return jsonResult(await client.listDirectMessages(params));
+      const result = await client.listDirectMessages(params);
+      if (includeFileDetails) {
+        return jsonResult({ ...result, messages: await client.addFileDetails(result.messages) });
+      }
+      return jsonResult(result);
     }
   );
 
