@@ -1,0 +1,65 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version increment
+        type: choice
+        required: true
+        default: patch
+        options: [patch, minor, major]
+  pull_request:
+    branches: [main]
+    types: [closed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && 'prepare' || format('pr-{0}', github.event.pull_request.number) }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.repository == 'yuryev89/webexmcp' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/github-script@v8
+        with:
+          script: |
+            const { prepareRelease } = require('./scripts/release-automation.cjs');
+            await prepareRelease({ github, context, core });
+
+  finalize:
+    if: >-
+      github.repository == 'yuryev89/webexmcp' &&
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.user.login == 'github-actions[bot]' &&
+      startsWith(github.event.pull_request.head.ref, 'release/v') &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: read
+      actions: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          persist-credentials: false
+      - uses: actions/github-script@v8
+        with:
+          script: |
+            const { finalizeRelease } = require('./scripts/release-automation.cjs');
+            await finalizeRelease({ github, context, core });
