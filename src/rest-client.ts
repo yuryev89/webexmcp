@@ -1,6 +1,13 @@
+import { createHash } from "node:crypto";
+import { once } from "node:events";
+import { createWriteStream } from "node:fs";
+import { mkdir, rename, rm } from "node:fs/promises";
+import { dirname } from "node:path";
+import { finished } from "node:stream/promises";
 import { getApiBaseUrl } from "./auth/config.js";
 import {
   MAX_FILE_BYTES,
+  MAX_SAVE_BYTES,
   assertWithinSizeLimit,
   detailsFromHeaders,
   resolveContentsUrl,
@@ -12,6 +19,8 @@ export type RestClientOpts = {
   getAccessToken: () => string;
   fedramp?: boolean;
   refreshToken?: () => Promise<string>;
+  /** Injected in tests so 423 retries do not really wait. */
+  sleep?: (ms: number) => Promise<void>;
 };
 
 type RequestOpts = {
@@ -124,7 +133,21 @@ export function createRestClient(opts: RestClientOpts) {
       response = await fetch(url, { ...init, headers });
     }
 
+    // 423 Locked: the file is still being scanned; wait as told and try again.
+    for (let attempt = 0; response.status === 423 && attempt < LOCKED_RETRIES; attempt += 1) {
+      await (opts.sleep ?? defaultSleep)(retryAfterMs(response.headers.get("retry-after")));
+      response = await fetch(url, { ...init, headers });
+    }
+
     return response;
+  }
+
+  async function contentsError(response: Response): Promise<Error> {
+    const message = await parseErrorBody(response);
+    if (response.status === 423) {
+      return new Error(`HTTP 423: file is still being scanned by Webex, try again later (${message})`);
+    }
+    return new Error(message.startsWith("HTTP ") ? message : `HTTP ${response.status}: ${message}`);
   }
 
   async function headContents(fileUrl: string): Promise<FileDetails> {
@@ -134,7 +157,7 @@ export function createRestClient(opts: RestClientOpts) {
       response = await binaryRequest("GET", fileUrl);
     }
     if (!response.ok) {
-      throw new Error(await parseErrorBody(response));
+      throw await contentsError(response);
     }
     return detailsFromHeaders(url, response.headers);
   }
@@ -146,7 +169,7 @@ export function createRestClient(opts: RestClientOpts) {
     const url = resolveContentsUrl(fileUrl, opts.fedramp ?? false);
     const response = await binaryRequest("GET", fileUrl);
     if (!response.ok) {
-      throw new Error(await parseErrorBody(response));
+      throw await contentsError(response);
     }
 
     const details = detailsFromHeaders(url, response.headers);
@@ -163,13 +186,90 @@ export function createRestClient(opts: RestClientOpts) {
     return downloaded;
   }
 
+  /**
+   * Stream a file to disk. `chooseTarget` gets the response metadata and returns the final path;
+   * the body goes to `<target>.part` first and is renamed only once complete and within the limit.
+   */
+  async function saveContents(
+    fileUrl: string,
+    chooseTarget: (details: FileDetails) => string,
+    maxBytes = MAX_SAVE_BYTES
+  ): Promise<SavedFile> {
+    const url = resolveContentsUrl(fileUrl, opts.fedramp ?? false);
+    const response = await binaryRequest("GET", fileUrl);
+    if (!response.ok) {
+      throw await contentsError(response);
+    }
+
+    const details = detailsFromHeaders(url, response.headers);
+    assertWithinSizeLimit(details.contentLength, maxBytes);
+
+    const target = chooseTarget(details);
+    const partial = `${target}.part`;
+    await mkdir(dirname(target), { recursive: true });
+
+    const hash = createHash("sha256");
+    const out = createWriteStream(partial);
+    let size = 0;
+    try {
+      for await (const chunk of responseChunks(response)) {
+        size += chunk.length;
+        assertWithinSizeLimit(size, maxBytes);
+        hash.update(chunk);
+        if (!out.write(chunk)) {
+          await once(out, "drain");
+        }
+      }
+      out.end();
+      await finished(out);
+      await rename(partial, target);
+    } catch (err) {
+      out.destroy();
+      await finished(out).catch(() => undefined);
+      await rm(partial, { force: true });
+      throw err;
+    }
+
+    return { ...details, path: target, size, sha256: hash.digest("hex") };
+  }
+
   return {
     getSpaceMeetingInfo,
     listDirectMessages,
     deleteTeam,
     headContents,
     getContents,
+    saveContents,
   };
+}
+
+export type SavedFile = FileDetails & {
+  path: string;
+  size: number;
+  sha256: string;
+};
+
+const LOCKED_RETRIES = 3;
+const MAX_RETRY_AFTER_MS = 10_000;
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
+}
+
+export function retryAfterMs(header: string | null): number {
+  const seconds = header ? Number.parseInt(header, 10) : Number.NaN;
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return 2_000;
+  }
+  return Math.min(seconds * 1000, MAX_RETRY_AFTER_MS);
+}
+
+async function* responseChunks(response: Response): AsyncGenerator<Uint8Array> {
+  if (response.body) {
+    yield* response.body as unknown as AsyncIterable<Uint8Array>;
+    return;
+  }
+  yield new Uint8Array(await response.arrayBuffer());
 }
 
 export type RestClient = ReturnType<typeof createRestClient>;

@@ -224,6 +224,19 @@ Open the latest screenshot in the "Project Alpha" space and describe it.
 
 Do **not** fetch the `files[]` URL with a generic HTTP tool — those contents URLs require the Webex bearer token. `webex_get_message_images` downloads PNG/JPEG/GIF/WebP as inline ImageContent so the model can see them.
 
+### Read documents, logs and archives attached to a message
+
+```
+Irina sent me a SQL script and a spreadsheet in our chat. Review the script and summarise the spreadsheet.
+```
+
+`webex_list_direct_messages` with `includeFileDetails: true` (shows each attachment's filename, type and size)
+→ `webex_download_file` for the SQL (text comes back inline; page with `offset` / `maxChars`)
+→ `webex_save_file` for the spreadsheet, then open the returned `path` with a local tool.
+
+ZIP and JAR files come back from `webex_download_file` as an entry list. PDF and Office files are saved, not parsed:
+open them with the agent's own reader or a script. Saved files are untrusted input — never run them.
+
 ## 6. Tool Reference
 
 ### Spaces
@@ -251,8 +264,10 @@ Do **not** fetch the `files[]` URL with a generic HTTP tool — those contents U
 | `webex_create_attachment_action` | Submit a card form action |
 | `webex_get_attachment_action` | Get attachment action details |
 | `webex_get_file_details` | Filename / type / size for a `files[]` URL |
-| `webex_download_file` | Download one file; images are inlined for vision |
+| `webex_download_file` | Read one file: images inline, text paged, ZIP/JAR entry list |
 | `webex_get_message_images` | Inline all image attachments on a message |
+| `webex_save_file` | Save one file to disk (`WEBEX_DOWNLOAD_DIR` or `~/.cache/webex-mcp/downloads`) |
+| `webex_save_message_files` | Save all files of a message to disk |
 
 ### Memberships
 
@@ -321,6 +336,8 @@ Do **not** fetch the `files[]` URL with a generic HTTP tool — those contents U
 | Empty spaces list | Bot is not in any room; create one via `webex_create_space` |
 | Can't read messages | Bot is not a member of that room — add via `webex_add_membership` |
 | Agent cannot see chat screenshots | Use `webex_get_message_images` with the message ID; do not open the `files[]` URL directly |
+| Agent cannot read a PDF / docx / xlsx | `webex_save_file` (or `webex_save_message_files`) and open the returned path locally |
+| `HTTP 423: file is still being scanned` | Webex has not finished virus-scanning the upload; wait and retry |
 | Search found nothing | Increase `scanLimit`; verify `roomId`; query is case-insensitive |
 | FedRAMP environment | Add `--fedramp` to args |
 

@@ -1,9 +1,18 @@
 import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { once } from "node:events";
+import { basename, dirname, join, resolve as resolvePath } from "node:path";
 import { finished } from "node:stream/promises";
-import { readSpacesCacheConfig } from "./auth/config.js";
+import { readSpacesCacheConfig, resolveDownloadDir } from "./auth/config.js";
+import {
+  classifyFile,
+  messageUuidFromContentsUrl,
+  sanitizeFilename,
+  uniqueFilename,
+  uuidFromMessageId,
+} from "./file-content.js";
 import {
   normalizeAttachmentAction,
   normalizeMembership,
@@ -107,6 +116,23 @@ export type WebexOpts = {
   fedramp?: boolean;
   getToken?: () => Promise<string>;
 };
+
+const FILE_DETAILS_CONCURRENCY = 4;
+
+async function runWithConcurrency<T>(
+  items: T[],
+  limit: number,
+  worker: (item: T) => Promise<void>
+): Promise<void> {
+  let next = 0;
+  const lanes = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const item = items[next++] as T;
+      await worker(item);
+    }
+  });
+  await Promise.all(lanes);
+}
 
 function toCachedSpace(space: ReturnType<typeof normalizeSpace>): CachedSpace | null {
   if (!space.id) {
@@ -913,6 +939,87 @@ export function createWebexClient(opts: WebexOpts) {
     return withAuthRetry(() => rest.getContents(fileUrl));
   }
 
+  /** All files of one message go to `<downloadDir>/<messageUuid>/`. */
+  function attachmentFolder(fileUrl: string): string {
+    const uuid =
+      messageUuidFromContentsUrl(fileUrl) ??
+      createHash("sha256").update(fileUrl).digest("hex").slice(0, 16);
+    return join(resolveDownloadDir(), uuid);
+  }
+
+  /**
+   * Save one attachment to disk. An existing file with the same name is replaced, so saving
+   * again refreshes it; pass `taken` to keep distinct names within one batch instead.
+   */
+  async function saveFile(fileUrl: string, taken?: Set<string>) {
+    const folder = attachmentFolder(fileUrl);
+    const saved = await withAuthRetry(() =>
+      rest.saveContents(fileUrl, (details) => {
+        const name = sanitizeFilename(details.filename);
+        const target = resolvePath(folder, taken ? uniqueFilename(name, taken) : name);
+        if (dirname(target) !== resolvePath(folder)) {
+          throw new Error("Refusing to save outside the download folder");
+        }
+        return target;
+      })
+    );
+    taken?.add(basename(saved.path).toLowerCase());
+    return {
+      path: saved.path,
+      directory: dirname(saved.path),
+      filename: saved.filename,
+      contentType: saved.contentType,
+      kind: classifyFile(saved.contentType, saved.filename),
+      size: saved.size,
+      sha256: saved.sha256,
+      url: saved.url,
+    };
+  }
+
+  async function saveMessageFiles(messageId: string) {
+    const { messages } = await getMessages({ messageId });
+    const message = messages[0];
+    if (!message) {
+      throw new Error("Message not found");
+    }
+    const files = message.files ?? [];
+    const taken = new Set<string>();
+    const saved: Awaited<ReturnType<typeof saveFile>>[] = [];
+    const failed: Array<{ fileUrl: string; error: string }> = [];
+    for (const fileUrl of files) {
+      try {
+        saved.push(await saveFile(fileUrl, taken));
+      } catch (err) {
+        failed.push({ fileUrl, error: err instanceof Error ? err.message : String(err) });
+      }
+    }
+    const directory =
+      saved[0]?.directory ??
+      (files[0] ? attachmentFolder(files[0]) : undefined) ??
+      join(resolveDownloadDir(), uuidFromMessageId(messageId) ?? "unknown");
+    return { messageId, directory, files: files.length, saved, failed };
+  }
+
+  /**
+   * Add `attachments` (filename, type, size, kind) to every message that has `files[]`,
+   * so an agent can see what was shared without one call per file.
+   */
+  async function addFileDetails<T extends { files?: string[] | undefined }>(messages: T[]) {
+    const urls = [...new Set(messages.flatMap((m) => m.files ?? []))];
+    const details = new Map<string, Record<string, unknown>>();
+    await runWithConcurrency(urls, FILE_DETAILS_CONCURRENCY, async (url) => {
+      try {
+        const info = await getFileDetails(url);
+        details.set(url, { ...info, kind: classifyFile(info.contentType, info.filename) });
+      } catch (err) {
+        details.set(url, { url, error: err instanceof Error ? err.message : String(err) });
+      }
+    });
+    return messages.map((m) =>
+      m.files?.length ? { ...m, attachments: m.files.map((url) => details.get(url)) } : m
+    );
+  }
+
   return {
     listSpaces,
     getSpace,
@@ -954,6 +1061,9 @@ export function createWebexClient(opts: WebexOpts) {
     deleteWebhook,
     getFileDetails,
     downloadFile,
+    saveFile,
+    saveMessageFiles,
+    addFileDetails,
   };
 }
 

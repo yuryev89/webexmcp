@@ -13,6 +13,7 @@ Minimal MCP server that exposes Webex messaging tools over stdio. Works with Cur
 ## Features
 
 - Full core Webex Messaging API coverage: spaces, messages, memberships, people, teams, webhooks, attachment actions, and file downloads
+- Received attachments for agents: images inline, text paged inline, ZIP/JAR listings, and saving any file to local disk
 - Search spaces and messages by keyword (client-side scan)
 - Bearer token authentication via `webex-node` SDK with REST fallback for select endpoints
 - OAuth 2.0 Integration login with automatic token refresh
@@ -238,12 +239,12 @@ References: [OpenCode MCP documentation](https://opencode.ai/docs/mcp-servers/) 
 
 | Tool | Description |
 |------|-------------|
-| `webex_get_messages` | List messages in a space or get one by ID |
+| `webex_get_messages` | List messages in a space or get one by ID (`includeFileDetails` adds attachment names/types/sizes) |
 | `webex_search_messages` | Keyword search within a single space |
 | `webex_create_message` | Send text and/or file attachments to a space or DM |
 | `webex_update_message` | Update an existing message |
 | `webex_delete_message` | Delete a message |
-| `webex_list_direct_messages` | List messages in a 1:1 direct room |
+| `webex_list_direct_messages` | List messages in a 1:1 direct room (`includeFileDetails` as above) |
 | `webex_create_attachment_action` | Submit an attachment card action |
 | `webex_get_attachment_action` | Get attachment action details |
 
@@ -283,8 +284,32 @@ additional credentials cannot be used as public file URLs. See the
 | Tool | Description |
 |------|-------------|
 | `webex_get_file_details` | Metadata (filename, type, size) for a message `files[]` URL |
-| `webex_download_file` | Download a file; images are returned as inline ImageContent |
+| `webex_download_file` | Read a file (max 10 MB): images inline, text paged with `offset`/`maxChars`, ZIP/JAR as an entry list |
 | `webex_get_message_images` | Download all image attachments on a message for LLM vision |
+| `webex_save_file` | Save one file to local disk (max 100 MB) and return its path |
+| `webex_save_message_files` | Save every file of a message to local disk |
+
+#### Reading received attachments
+
+What `webex_download_file` returns depends on the file:
+
+| File | Result |
+|------|--------|
+| PNG, JPEG, GIF, WebP | Inline ImageContent |
+| Text: `text/*`, JSON, XML, SQL, diff/patch, source code | JSON summary (`totalChars`, `nextOffset`, …) + the text, `maxChars` per call (default 50 000) |
+| ZIP, JAR, WAR, EAR | List of entries (name, size, encrypted); nothing is extracted |
+| Anything else (PDF, docx, xlsx, …) | Metadata and a hint to use `webex_save_file` |
+
+For PDF and Office documents, save the file and open it with the client's own tools
+(many agents read PDFs and images directly; use a script for docx/xlsx). Saved files go to
+`<download dir>/<message-uuid>/<filename>`, where the download dir is `WEBEX_DOWNLOAD_DIR`
+or `~/.cache/webex-mcp/downloads`. Names are taken from Webex, decoded and made safe for
+the file system; saving again replaces the file, and `webex_save_message_files` adds
+` (1)` to same-named files of one message. The body streams to `<name>.part` and is renamed
+only when complete. Treat saved files as untrusted input: open or list them, never run them.
+
+If Webex is still virus-scanning a file it answers `423 Locked`; downloads wait for
+`Retry-After` (up to 10 s) and retry three times before failing.
 
 ### Memberships
 
@@ -334,8 +359,10 @@ additional credentials cannot be used as public file URLs. See the
 - Search scans message history page by page — may be slow in large spaces
 - Bot must be a **member** of a space to read or post messages
 - OAuth uses user-delegated tokens; Bot mode uses a long-lived Bot token
-- Message `files[]` URLs require the access token; use `webex_get_message_images` / `webex_download_file` instead of fetching the URL directly
-- Inline vision images are limited to PNG, JPEG, GIF, and WebP, max 10 MB each
+- Message `files[]` URLs require the access token; use `webex_get_message_images` / `webex_download_file` / `webex_save_file` instead of fetching the URL directly
+- Inline vision images are limited to PNG, JPEG, GIF, and WebP, max 10 MB each; inline text and archive listings are also limited to 10 MB
+- PDF and Office documents are not parsed by the server; save them and open them locally
+- ZIP64 archives cannot be listed inline; save them instead
 
 ## Authentication modes
 
