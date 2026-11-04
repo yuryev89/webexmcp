@@ -1,13 +1,14 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { registerAllTools } from "./tools/register.js";
+import { PACKAGE_VERSION } from "./version.js";
 import { createWebexClient, type WebexOpts } from "./webex.js";
 
 export function makeServer(opts: WebexOpts) {
   const client = createWebexClient(opts);
 
   const server = new McpServer(
-    { name: "webex-mcp", version: "0.2.6" },
+    { name: "webex-mcp", version: PACKAGE_VERSION },
     { capabilities: { tools: {} } }
   );
 
