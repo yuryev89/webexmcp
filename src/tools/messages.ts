@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { isAbsolute } from "node:path";
 import type { WebexClient } from "../webex.js";
 import { jsonResult } from "./common.js";
 
@@ -84,7 +85,7 @@ export function registerMessageTools(server: McpServer, client: WebexClient) {
   server.registerTool(
     "webex_create_message",
     {
-      description: "Create a message in a Webex space or send a direct message.",
+      description: "Create a message in a Webex space or send a direct message, optionally with file attachments. Text is optional when sending files.",
       inputSchema: {
         roomId: z.string().optional().describe("Space ID to post the message in"),
         text: z.string().optional().describe("Plain text message"),
@@ -92,11 +93,20 @@ export function registerMessageTools(server: McpServer, client: WebexClient) {
         toPersonEmail: z.string().optional().describe("Recipient email for a direct message"),
         toPersonId: z.string().optional().describe("Recipient person ID for a direct message"),
         parentId: z.string().optional().describe("Parent message ID for a thread reply"),
+        files: z.array(z.string().url().refine(
+          (value) => /^https?:\/\//i.test(value),
+          "File URLs must use HTTP or HTTPS"
+        )).min(1).optional().describe("Publicly accessible HTTP(S) file URLs. Use filePath instead for a local file."),
+        filePath: z.string().refine(isAbsolute, "filePath must be an absolute path")
+          .optional().describe("Absolute path to one local file on the MCP server (up to 100 MB). Cannot be combined with files."),
       },
     },
-    async ({ roomId, text, markdown, toPersonEmail, toPersonId, parentId }) => {
-      if (!text && !markdown) {
-        throw new Error("At least one of text or markdown is required");
+    async ({ roomId, text, markdown, toPersonEmail, toPersonId, parentId, files, filePath }) => {
+      if (files && filePath) {
+        throw new Error("Use either files or filePath, not both");
+      }
+      if (!text && !markdown && !files?.length && !filePath) {
+        throw new Error("At least one of text, markdown, files or filePath is required");
       }
       const params: {
         roomId?: string;
@@ -105,6 +115,8 @@ export function registerMessageTools(server: McpServer, client: WebexClient) {
         toPersonEmail?: string;
         toPersonId?: string;
         parentId?: string;
+        files?: string[];
+        filePath?: string;
       } = {};
       if (roomId) params.roomId = roomId;
       if (text) params.text = text;
@@ -112,6 +124,8 @@ export function registerMessageTools(server: McpServer, client: WebexClient) {
       if (toPersonEmail) params.toPersonEmail = toPersonEmail;
       if (toPersonId) params.toPersonId = toPersonId;
       if (parentId) params.parentId = parentId;
+      if (files) params.files = files;
+      if (filePath) params.filePath = filePath;
       return jsonResult(await client.createMessage(params));
     }
   );

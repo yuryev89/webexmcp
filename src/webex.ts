@@ -1,4 +1,8 @@
 import { createRequire } from "node:module";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
+import { once } from "node:events";
+import { finished } from "node:stream/promises";
 import { readSpacesCacheConfig } from "./auth/config.js";
 import {
   normalizeAttachmentAction,
@@ -636,6 +640,8 @@ export function createWebexClient(opts: WebexOpts) {
     toPersonEmail?: string;
     toPersonId?: string;
     parentId?: string;
+    files?: string[];
+    filePath?: string;
   }) {
     return withAuthRetry(async () => {
       const body: Record<string, unknown> = {};
@@ -645,6 +651,25 @@ export function createWebexClient(opts: WebexOpts) {
       if (params.toPersonEmail) body.toPersonEmail = params.toPersonEmail;
       if (params.toPersonId) body.toPersonId = params.toPersonId;
       if (params.parentId) body.parentId = params.parentId;
+      if (params.files) body.files = params.files;
+
+      if (params.filePath) {
+        const info = await stat(params.filePath);
+        if (!info.isFile()) throw new Error("filePath must point to a regular file");
+        if (info.size > 100 * 1024 * 1024) {
+          throw new Error("File exceeds the Webex 100 MB attachment limit");
+        }
+        const stream = createReadStream(params.filePath);
+        const closed = finished(stream).catch(() => undefined);
+        try {
+          await once(stream, "open");
+          body.files = [stream];
+          return normalizeMessage(await webex.messages.create(body));
+        } finally {
+          stream.destroy();
+          await closed;
+        }
+      }
 
       const message = await webex.messages.create(body);
       return normalizeMessage(message);
