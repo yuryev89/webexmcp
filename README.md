@@ -240,12 +240,43 @@ References: [OpenCode MCP documentation](https://opencode.ai/docs/mcp-servers/) 
 |------|-------------|
 | `webex_get_messages` | List messages in a space or get one by ID |
 | `webex_search_messages` | Keyword search within a single space |
-| `webex_create_message` | Send a message to a space or DM |
+| `webex_create_message` | Send text and/or file attachments to a space or DM |
 | `webex_update_message` | Update an existing message |
 | `webex_delete_message` | Delete a message |
 | `webex_list_direct_messages` | List messages in a 1:1 direct room |
 | `webex_create_attachment_action` | Submit an attachment card action |
 | `webex_get_attachment_action` | Get attachment action details |
+
+#### Sending file attachments
+
+Use `webex_create_message` with `files` for publicly accessible HTTP(S) URLs:
+
+```json
+{
+  "roomId": "SPACE_ID",
+  "text": "Here is the report",
+  "files": ["https://example.com/report.pdf"]
+}
+```
+
+For a local file, use `filePath` instead. The server uploads its contents using
+multipart; the file must be on the machine running the MCP server, with an
+absolute path and a size of at most 100 MB:
+
+```json
+{
+  "toPersonEmail": "colleague@example.com",
+  "filePath": "/absolute/path/to/report.pdf"
+}
+```
+
+On Windows, use an absolute Windows path such as `C:\\Reports\\report.pdf`.
+Text and markdown are optional when attaching a file. `files` must be nonempty
+and cannot be combined with `filePath`. Recipient fields (`roomId`, `toPersonId`,
+`toPersonEmail`) and `parentId` for thread replies work as with text messages.
+URL downloads and attachment limits are enforced by Webex; private URLs requiring
+additional credentials cannot be used as public file URLs. See the
+[Webex attachment guide](https://developer.webex.com/docs/rest-api-basics).
 
 ### Files
 
