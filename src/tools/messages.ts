@@ -8,7 +8,7 @@ const includeFileDetailsSchema = z
   .boolean()
   .default(false)
   .describe(
-    "Add attachments[] (filename, contentType, size, kind) to messages with files; one HEAD request per file"
+    "Include attachment metadata; 1 HEAD request/file"
   );
 
 export function validateDirectMessageParams(params: {
@@ -35,13 +35,13 @@ export function registerMessageTools(server: McpServer, client: WebexClient) {
     "webex_get_messages",
     {
       description:
-        "Get messages from a Webex space. Provide messageId for a single message, or roomId to list messages.",
+        "Get one message by messageId or list space messages by roomId.",
       inputSchema: {
-        roomId: z.string().optional().describe("Space ID (required for listing)"),
-        messageId: z.string().optional().describe("Message ID (returns a single message)"),
-        before: z.string().optional().describe("List messages sent before this date/time"),
-        beforeMessage: z.string().optional().describe("List messages before this message ID"),
-        mentionedPeople: z.string().optional().describe("Filter by mentioned people IDs"),
+        roomId: z.string().optional().describe("Space ID for listing"),
+        messageId: z.string().optional().describe("Message ID for single lookup"),
+        before: z.string().optional().describe("Messages before date/time"),
+        beforeMessage: z.string().optional().describe("Messages before this ID"),
+        mentionedPeople: z.string().optional().describe("Mentioned person IDs"),
         max: z.number().int().positive().max(1000).default(50),
         includeFileDetails: includeFileDetailsSchema,
       },
@@ -72,13 +72,13 @@ export function registerMessageTools(server: McpServer, client: WebexClient) {
     "webex_search_messages",
     {
       description:
-        "Search messages in a Webex space by keyword. Scans message history within a single room (no global search API).",
+        "Keyword search within one space; scans history, not global search.",
       inputSchema: {
-        roomId: z.string().describe("Space ID to search in"),
-        query: z.string().describe("Keyword to find in text or markdown (case-insensitive)"),
+        roomId: z.string().describe("Space ID"),
+        query: z.string().describe("Case-insensitive text/markdown keyword"),
         maxResults: z.number().int().positive().max(100).default(20),
         scanLimit: z.number().int().positive().max(5000).default(500),
-        before: z.string().optional().describe("Only scan messages before this date/time"),
+        before: z.string().optional().describe("Scan before date/time"),
       },
     },
     async ({ roomId, query, maxResults, scanLimit, before }) => {
@@ -97,20 +97,20 @@ export function registerMessageTools(server: McpServer, client: WebexClient) {
   server.registerTool(
     "webex_create_message",
     {
-      description: "Create a message in a Webex space or send a direct message, optionally with file attachments. Text is optional when sending files.",
+      description: "Send a space/DM message or files; text optional with files.",
       inputSchema: {
-        roomId: z.string().optional().describe("Space ID to post the message in"),
-        text: z.string().optional().describe("Plain text message"),
-        markdown: z.string().optional().describe("Markdown message"),
-        toPersonEmail: z.string().optional().describe("Recipient email for a direct message"),
-        toPersonId: z.string().optional().describe("Recipient person ID for a direct message"),
-        parentId: z.string().optional().describe("Parent message ID for a thread reply"),
+        roomId: z.string().optional().describe("Destination space ID"),
+        text: z.string().optional().describe("Plain text"),
+        markdown: z.string().optional().describe("Markdown text"),
+        toPersonEmail: z.string().optional().describe("DM recipient email"),
+        toPersonId: z.string().optional().describe("DM recipient ID"),
+        parentId: z.string().optional().describe("Thread parent message ID"),
         files: z.array(z.string().url().refine(
           (value) => /^https?:\/\//i.test(value),
           "File URLs must use HTTP or HTTPS"
-        )).min(1).optional().describe("Publicly accessible HTTP(S) file URLs. Use filePath instead for a local file."),
+        )).min(1).optional().describe("Public HTTP(S) file URLs; incompatible with filePath"),
         filePath: z.string().refine(isAbsolute, "filePath must be an absolute path")
-          .optional().describe("Absolute path to one local file on the MCP server (up to 100 MB). Cannot be combined with files."),
+          .optional().describe("Server-local absolute path (max 100 MB); incompatible with files"),
       },
     },
     async ({ roomId, text, markdown, toPersonEmail, toPersonId, parentId, files, filePath }) => {
@@ -145,12 +145,12 @@ export function registerMessageTools(server: McpServer, client: WebexClient) {
   server.registerTool(
     "webex_update_message",
     {
-      description: "Update an existing Webex message.",
+      description: "Edit a message.",
       inputSchema: {
-        messageId: z.string().describe("Message ID to update"),
-        text: z.string().optional().describe("New plain text content"),
-        markdown: z.string().optional().describe("New markdown content"),
-        roomId: z.string().optional().describe("Room ID (required for some message types)"),
+        messageId: z.string().describe("Message ID"),
+        text: z.string().optional().describe("New plain text"),
+        markdown: z.string().optional().describe("New markdown"),
+        roomId: z.string().optional().describe("Space ID (sometimes required)"),
       },
     },
     async ({ messageId, text, markdown, roomId }) => {
@@ -175,9 +175,9 @@ export function registerMessageTools(server: McpServer, client: WebexClient) {
   server.registerTool(
     "webex_delete_message",
     {
-      description: "Delete a Webex message by ID.",
+      description: "Delete a message by ID.",
       inputSchema: {
-        messageId: z.string().describe("Message ID to delete"),
+        messageId: z.string().describe("Message ID"),
       },
     },
     async ({ messageId }) => jsonResult(await client.deleteMessage(messageId))
@@ -186,11 +186,11 @@ export function registerMessageTools(server: McpServer, client: WebexClient) {
   server.registerTool(
     "webex_list_direct_messages",
     {
-      description: "List messages in a 1:1 direct message room.",
+      description: "List 1:1 DM messages; personId or personEmail required.",
       inputSchema: {
-        parentId: z.string().optional().describe("Parent message ID to filter by"),
-        personId: z.string().optional().describe("Person ID for the 1:1 room"),
-        personEmail: z.string().optional().describe("Person email for the 1:1 room"),
+        parentId: z.string().optional().describe("Thread parent ID"),
+        personId: z.string().optional().describe("DM person ID"),
+        personEmail: z.string().optional().describe("DM person email"),
         includeFileDetails: includeFileDetailsSchema,
       },
     },
@@ -218,14 +218,14 @@ export function registerMessageTools(server: McpServer, client: WebexClient) {
   server.registerTool(
     "webex_create_attachment_action",
     {
-      description: "Create an attachment action on a card message (e.g. form submit).",
+      description: "Submit an action on a message card.",
       inputSchema: {
-        messageId: z.string().describe("Message ID containing the attachment card"),
+        messageId: z.string().describe("Card message ID"),
         type: z.string().describe("Action type (e.g. submit)"),
         inputs: z
           .record(z.unknown())
           .optional()
-          .describe("Form field inputs from the card"),
+          .describe("Card form inputs"),
       },
     },
     async ({ messageId, type, inputs }) => {
@@ -242,7 +242,7 @@ export function registerMessageTools(server: McpServer, client: WebexClient) {
   server.registerTool(
     "webex_get_attachment_action",
     {
-      description: "Get details of an attachment action by ID.",
+      description: "Get card action by ID.",
       inputSchema: {
         actionId: z.string().describe("Attachment action ID"),
       },
