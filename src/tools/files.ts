@@ -71,11 +71,11 @@ export function registerFileTools(server: McpServer, client: WebexClient) {
     "webex_get_file_details",
     {
       description:
-        "Get metadata (filename, Content-Type, size) for a Webex message file URL from files[]. Does not download the body.",
+        "Get attachment metadata (filename, content type, size); no body.",
       inputSchema: {
         fileUrl: z
           .string()
-          .describe("Webex contents URL from a message files[] array"),
+          .describe("Message files[] contents URL"),
       },
     },
     async ({ fileUrl }) => jsonResult(await client.getFileDetails(fileUrl))
@@ -85,24 +85,24 @@ export function registerFileTools(server: McpServer, client: WebexClient) {
     "webex_download_file",
     {
       description:
-        "Read a Webex message file by contents URL (max 10 MB). Images (PNG, JPEG, GIF, WebP) come back as inline ImageContent; text files (txt, log, csv, json, xml, sql, diff, patch, source code) as text, paged with offset/maxChars; ZIP/JAR archives as a list of entries (nothing is extracted). For other types (PDF, Office documents, ...) use webex_save_file and open the saved file.",
+        "Read attachment (max 10 MB): inline images, paged text, ZIP/JAR entry list (no extraction). For PDF/Office/binary use webex_save_file.",
       inputSchema: {
         fileUrl: z
           .string()
-          .describe("Webex contents URL from a message files[] array"),
+          .describe("Message files[] contents URL"),
         offset: z
           .number()
           .int()
           .nonnegative()
           .default(0)
-          .describe("Text files: character offset to start from (use nextOffset of the previous call)"),
+          .describe("Text offset; use previous nextOffset"),
         maxChars: z
           .number()
           .int()
           .positive()
           .max(200_000)
           .default(DEFAULT_TEXT_CHARS)
-          .describe("Text files: maximum characters to return"),
+          .describe("Max text characters"),
       },
     },
     async ({ fileUrl, offset, maxChars }) => {
@@ -123,11 +123,11 @@ export function registerFileTools(server: McpServer, client: WebexClient) {
     "webex_save_file",
     {
       description:
-        "Save a Webex message file to local disk (max 100 MB) and return its path, so it can be opened with local tools (PDF/image readers, Python for docx/xlsx, unzip listings). Files go to <WEBEX_DOWNLOAD_DIR or ~/.cache/webex-mcp/downloads>/<message-uuid>/<filename>; saving again replaces the file. Treat saved files as untrusted: never execute them.",
+        "Save attachment to local disk (max 100 MB); returns path for local readers. Directory: WEBEX_DOWNLOAD_DIR or ~/.cache/webex-mcp/downloads/<message-uuid>/<filename>. Overwrites existing file; never execute untrusted downloads.",
       inputSchema: {
         fileUrl: z
           .string()
-          .describe("Webex contents URL from a message files[] array"),
+          .describe("Message files[] contents URL"),
       },
     },
     async ({ fileUrl }) => jsonResult(await client.saveFile(fileUrl))
@@ -137,9 +137,9 @@ export function registerFileTools(server: McpServer, client: WebexClient) {
     "webex_save_message_files",
     {
       description:
-        "Save every file attached to a Webex message to local disk (same folder layout and limits as webex_save_file). Returns saved paths plus per-file failures.",
+        "Save all message attachments locally (webex_save_file limits); return paths and failures.",
       inputSchema: {
-        messageId: z.string().describe("Message ID whose files[] attachments should be saved"),
+        messageId: z.string().describe("Message ID"),
       },
     },
     async ({ messageId }) => jsonResult(await client.saveMessageFiles(messageId))
@@ -149,9 +149,9 @@ export function registerFileTools(server: McpServer, client: WebexClient) {
     "webex_get_message_images",
     {
       description:
-        "Download image attachments from a Webex message as inline ImageContent for LLM vision. Non-image files are listed in the summary and skipped.",
+        "Return message images inline for vision; report skipped non-images.",
       inputSchema: {
-        messageId: z.string().describe("Message ID whose files[] attachments should be downloaded"),
+        messageId: z.string().describe("Message ID"),
       },
     },
     async ({ messageId }) => {

@@ -17,11 +17,11 @@ export function registerPeopleTools(server: McpServer, client: WebexClient) {
   server.registerTool(
     "webex_get_people",
     {
-      description: "Search for people in the organization by email, display name, or ID.",
+      description: "Find org people by email, name prefix or ID; one required.",
       inputSchema: {
-        email: z.string().optional().describe("Email address to search for"),
-        displayName: z.string().optional().describe("Display name prefix to search for"),
-        id: z.string().optional().describe("Person ID(s), up to 85 comma-separated"),
+        email: z.string().optional().describe("Email"),
+        displayName: z.string().optional().describe("Name prefix"),
+        id: z.string().optional().describe("Person IDs (up to 85, comma-separated)"),
         max: z.number().int().positive().max(100).default(100),
       },
     },
@@ -48,9 +48,9 @@ export function registerPeopleTools(server: McpServer, client: WebexClient) {
     "webex_get_person",
     {
       description:
-        'Get a person by ID. Use id "me" to get the authenticated user\'s own details.',
+        'Get person by ID; "me" selects current user.',
       inputSchema: {
-        id: z.string().describe('Person ID, or "me" for the authenticated user'),
+        id: z.string().describe('Person ID or "me"'),
       },
     },
     async ({ id }) => jsonResult(await client.getPerson(id))

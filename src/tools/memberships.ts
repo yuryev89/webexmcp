@@ -16,11 +16,11 @@ export function registerMembershipTools(server: McpServer, client: WebexClient) 
   server.registerTool(
     "webex_list_memberships",
     {
-      description: "List memberships in Webex spaces.",
+      description: "List space members.",
       inputSchema: {
-        roomId: z.string().optional().describe("Filter by space ID"),
-        personId: z.string().optional().describe("Filter by person ID"),
-        personEmail: z.string().optional().describe("Filter by person email"),
+        roomId: z.string().optional().describe("Space ID filter"),
+        personId: z.string().optional().describe("Person ID filter"),
+        personEmail: z.string().optional().describe("Person email filter"),
         max: z.number().int().positive().max(1000).default(100),
       },
     },
@@ -41,7 +41,7 @@ export function registerMembershipTools(server: McpServer, client: WebexClient) 
   server.registerTool(
     "webex_get_membership",
     {
-      description: "Get membership details by ID.",
+      description: "Get space membership by ID.",
       inputSchema: {
         membershipId: z.string().describe("Membership ID"),
       },
@@ -52,12 +52,12 @@ export function registerMembershipTools(server: McpServer, client: WebexClient) 
   server.registerTool(
     "webex_add_membership",
     {
-      description: "Add a person to a Webex space (invite by email or person ID).",
+      description: "Add space member by personEmail or personId.",
       inputSchema: {
         roomId: z.string().describe("Space ID"),
-        personEmail: z.string().optional().describe("Email of the person to invite"),
-        personId: z.string().optional().describe("Person ID to invite"),
-        isModerator: z.boolean().optional().describe("Whether the person should be a moderator"),
+        personEmail: z.string().optional().describe("Person email"),
+        personId: z.string().optional().describe("Person ID"),
+        isModerator: z.boolean().optional().describe("Moderator"),
       },
     },
     async ({ roomId, personEmail, personId, isModerator }) => {
@@ -81,11 +81,11 @@ export function registerMembershipTools(server: McpServer, client: WebexClient) 
   server.registerTool(
     "webex_update_membership",
     {
-      description: "Update a space membership (e.g. moderator status).",
+      description: "Update space member roles.",
       inputSchema: {
         membershipId: z.string().describe("Membership ID"),
-        isModerator: z.boolean().optional().describe("Whether the person is a moderator"),
-        isMonitor: z.boolean().optional().describe("Whether the person is a room monitor"),
+        isModerator: z.boolean().optional().describe("Moderator"),
+        isMonitor: z.boolean().optional().describe("Room monitor"),
       },
     },
     async ({ membershipId, isModerator, isMonitor }) => {
@@ -103,9 +103,9 @@ export function registerMembershipTools(server: McpServer, client: WebexClient) 
   server.registerTool(
     "webex_remove_membership",
     {
-      description: "Remove a person from a Webex space.",
+      description: "Remove space member.",
       inputSchema: {
-        membershipId: z.string().describe("Membership ID to remove"),
+        membershipId: z.string().describe("Membership ID"),
       },
     },
     async ({ membershipId }) => jsonResult(await client.removeMembership(membershipId))

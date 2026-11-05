@@ -7,18 +7,18 @@ export function registerSpaceTools(server: McpServer, client: WebexClient) {
   server.registerTool(
     "webex_list_spaces",
     {
-      description: "List Webex spaces (rooms) for the authenticated user.",
+      description: "List accessible spaces.",
       inputSchema: {
-        type: z.enum(["group", "direct"]).optional().describe("Filter by space type"),
-        teamId: z.string().optional().describe("List rooms for a specific team"),
+        type: z.enum(["group", "direct"]).optional().describe("Space type"),
+        teamId: z.string().optional().describe("Team ID"),
         orgPublicSpaces: z
           .boolean()
           .optional()
-          .describe("Show org public spaces (cannot be used with type)"),
-        from: z.string().optional().describe("Filter rooms made public after this time"),
-        to: z.string().optional().describe("Filter rooms made public before this time"),
+          .describe("Org public spaces; incompatible with type"),
+        from: z.string().optional().describe("Public since"),
+        to: z.string().optional().describe("Public before"),
         max: z.number().int().positive().max(1000).default(100),
-        sortBy: z.string().optional().describe("Field to sort results by"),
+        sortBy: z.string().optional().describe("Sort field"),
       },
     },
     async ({ type, teamId, orgPublicSpaces, from, to, max, sortBy }) => {
@@ -45,15 +45,15 @@ export function registerSpaceTools(server: McpServer, client: WebexClient) {
     "webex_search_spaces",
     {
       description:
-        "Search Webex spaces (rooms) by title/name. Case-insensitive substring match.",
+        "Find spaces by case-insensitive title substring.",
       inputSchema: {
-        query: z.string().describe("Space name or title substring to search for"),
-        type: z.enum(["group", "direct"]).optional().describe("Filter by space type"),
-        teamId: z.string().optional().describe("Limit search to rooms in a specific team"),
+        query: z.string().describe("Title substring"),
+        type: z.enum(["group", "direct"]).optional().describe("Space type"),
+        teamId: z.string().optional().describe("Team ID filter"),
         sortBy: z
           .string()
           .optional()
-          .describe('Sort order for API scan (default: "lastactivity")'),
+          .describe('API scan order (default: lastactivity)'),
         maxResults: z.number().int().positive().max(100).default(20),
         scanLimit: z.number().int().positive().max(5000).default(500),
       },
@@ -77,9 +77,9 @@ export function registerSpaceTools(server: McpServer, client: WebexClient) {
   server.registerTool(
     "webex_get_space",
     {
-      description: "Get details of a Webex space (room) by ID.",
+      description: "Get space by ID.",
       inputSchema: {
-        roomId: z.string().describe("Space (room) ID"),
+        roomId: z.string().describe("Space ID"),
       },
     },
     async ({ roomId }) => jsonResult(await client.getSpace(roomId))
@@ -88,14 +88,14 @@ export function registerSpaceTools(server: McpServer, client: WebexClient) {
   server.registerTool(
     "webex_create_space",
     {
-      description: "Create a new Webex space (room).",
+      description: "Create a space.",
       inputSchema: {
-        title: z.string().describe("Space title"),
-        teamId: z.string().optional().describe("Team ID to associate the space with"),
-        description: z.string().optional().describe("Space description"),
-        isLocked: z.boolean().optional().describe("Whether the space is locked"),
-        isPublic: z.boolean().optional().describe("Whether the space is a public org space"),
-        isAnnouncementOnly: z.boolean().optional().describe("Whether only moderators can post"),
+        title: z.string().describe("Title"),
+        teamId: z.string().optional().describe("Team ID"),
+        description: z.string().optional().describe("Description"),
+        isLocked: z.boolean().optional().describe("Locked"),
+        isPublic: z.boolean().optional().describe("Public to org"),
+        isAnnouncementOnly: z.boolean().optional().describe("Moderators only"),
       },
     },
     async ({ title, teamId, description, isLocked, isPublic, isAnnouncementOnly }) => {
@@ -119,14 +119,14 @@ export function registerSpaceTools(server: McpServer, client: WebexClient) {
   server.registerTool(
     "webex_update_space",
     {
-      description: "Update a Webex space (room).",
+      description: "Update a space.",
       inputSchema: {
-        roomId: z.string().describe("Space (room) ID"),
-        title: z.string().optional().describe("New space title"),
-        description: z.string().optional().describe("New space description"),
-        isLocked: z.boolean().optional().describe("Whether the space is locked"),
-        isPublic: z.boolean().optional().describe("Whether the space is a public org space"),
-        isAnnouncementOnly: z.boolean().optional().describe("Whether only moderators can post"),
+        roomId: z.string().describe("Space ID"),
+        title: z.string().optional().describe("New title"),
+        description: z.string().optional().describe("New description"),
+        isLocked: z.boolean().optional().describe("Locked"),
+        isPublic: z.boolean().optional().describe("Public to org"),
+        isAnnouncementOnly: z.boolean().optional().describe("Moderators only"),
       },
     },
     async ({ roomId, title, description, isLocked, isPublic, isAnnouncementOnly }) => {
@@ -150,9 +150,9 @@ export function registerSpaceTools(server: McpServer, client: WebexClient) {
   server.registerTool(
     "webex_delete_space",
     {
-      description: "Delete a Webex space (room) by ID.",
+      description: "Delete a space by ID.",
       inputSchema: {
-        roomId: z.string().describe("Space (room) ID"),
+        roomId: z.string().describe("Space ID"),
       },
     },
     async ({ roomId }) => jsonResult(await client.deleteSpace(roomId))
@@ -161,9 +161,9 @@ export function registerSpaceTools(server: McpServer, client: WebexClient) {
   server.registerTool(
     "webex_get_space_meeting_info",
     {
-      description: "Get Webex meeting details for a specific space (room).",
+      description: "Get space meeting details.",
       inputSchema: {
-        roomId: z.string().describe("Space (room) ID"),
+        roomId: z.string().describe("Space ID"),
       },
     },
     async ({ roomId }) => jsonResult(await client.getSpaceMeetingInfo(roomId))
