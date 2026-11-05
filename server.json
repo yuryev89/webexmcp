@@ -1,0 +1,29 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.yuryev89/webex-mcp",
+  "description": "Open-source Cisco Webex Messaging MCP server for spaces, messages, people, teams, webhooks, and file attachments.",
+  "repository": {
+    "url": "https://github.com/yuryev89/webexmcp",
+    "source": "github"
+  },
+  "version": "0.2.8",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@yuryev89/webex-mcp",
+      "version": "0.2.8",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "WEBEX_ACCESS_TOKEN",
+          "description": "Webex bot token. Alternatively, authenticate via Webex OAuth as documented in the README.",
+          "isRequired": false,
+          "isSecret": true,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}
