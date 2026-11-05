@@ -1,4 +1,4 @@
-name: Publish to npm
+name: Publish to npm and MCP Registry
 
 on:
   workflow_dispatch:
@@ -88,3 +88,39 @@ jobs:
       - name: Publish verified tarball with OIDC
         if: steps.npm-status.outputs.published != 'true'
         run: npm publish "$PACKAGE_FILE" --access public --tag latest
+      - name: Wait for the published npm package metadata
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          for attempt in {1..12}; do
+            if npm view "@yuryev89/webex-mcp@${VERSION}" mcpName --json 2>/dev/null | grep -Fq '"io.github.yuryev89/webex-mcp"'; then
+              exit 0
+            fi
+            echo "Waiting for npm to expose @yuryev89/webex-mcp@${VERSION} (attempt ${attempt}/12)"
+            sleep 10
+          done
+          echo "::error::npm package metadata is not yet available or mcpName is missing"
+          exit 1
+      - name: Synchronize MCP Registry manifest with release version
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+          const manifest = JSON.parse(readFileSync('server.json', 'utf8'));
+          assert.equal(pkg.mcpName, manifest.name, 'MCP registry name must match npm mcpName');
+          assert.equal(manifest.packages.length, 1);
+          assert.equal(manifest.packages[0].identifier, pkg.name);
+          manifest.version = pkg.version;
+          manifest.packages[0].version = pkg.version;
+          writeFileSync('server.json', JSON.stringify(manifest, null, 2) + '\n');
+          NODE
+      - name: Install official MCP Registry publisher
+        run: |
+          curl --fail --location --silent --show-error "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" --output mcp-publisher.tar.gz
+          tar -xzf mcp-publisher.tar.gz mcp-publisher
+          chmod +x mcp-publisher
+          ./mcp-publisher --help
+      - name: Authenticate to MCP Registry with GitHub OIDC
+        run: ./mcp-publisher login github-oidc
+      - name: Publish to official MCP Registry
+        run: ./mcp-publisher publish
