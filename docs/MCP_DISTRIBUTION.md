@@ -23,6 +23,8 @@ Use the same product identity and description everywhere. Submit separately wher
 | [Glama](https://glama.ai/mcp/servers) | Add GitHub repository; obtain a quality score for the awesome list |
 | [mcp.so](https://mcp.so/submit) | Submit GitHub repository under local MCP Server |
 | [MCP.Directory](https://mcp.directory/submit) | GitHub repository URL + optional npm package |
+| [MCP Servers](https://mcpservers.org/submit) | Web form (free review option); mark this server as local, not remote |
+| [MCP Market](https://mcpmarket.com/submit) | GitHub repository form; free review queue available |
 | [punkpeye/awesome-mcp-servers](https://github.com/punkpeye/awesome-mcp-servers) | Fork and PR under Communication; include Glama quality-score badge |
 | [PulseMCP](https://www.pulsemcp.com/servers) | Check automatic sync from official registry; direct submissions may be paused |
 
