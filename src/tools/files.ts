@@ -71,7 +71,7 @@ export function registerFileTools(server: McpServer, client: WebexClient) {
     "webex_get_file_details",
     {
       description:
-        "Get attachment metadata (name, type, size); no body.",
+        "Get attachment metadata (filename, content type, size); no body.",
       inputSchema: {
         fileUrl: z
           .string()
@@ -85,7 +85,7 @@ export function registerFileTools(server: McpServer, client: WebexClient) {
     "webex_download_file",
     {
       description:
-        "Read attachment (max 10 MB): inline images, paged text, ZIP/JAR entry list. For PDF/Office/binary use webex_save_file.",
+        "Read attachment (max 10 MB): inline images, paged text, ZIP/JAR entry list (no extraction). For PDF/Office/binary use webex_save_file.",
       inputSchema: {
         fileUrl: z
           .string()
@@ -123,7 +123,7 @@ export function registerFileTools(server: McpServer, client: WebexClient) {
     "webex_save_file",
     {
       description:
-        "Save attachment to local disk (max 100 MB); returns path for local readers. Directory: WEBEX_DOWNLOAD_DIR or ~/.cache/webex-mcp/downloads, under message ID. Overwrites existing file; never execute untrusted downloads.",
+        "Save attachment to local disk (max 100 MB); returns path for local readers. Directory: WEBEX_DOWNLOAD_DIR or ~/.cache/webex-mcp/downloads/<message-uuid>/<filename>. Overwrites existing file; never execute untrusted downloads.",
       inputSchema: {
         fileUrl: z
           .string()
