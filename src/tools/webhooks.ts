@@ -18,7 +18,7 @@ export function registerWebhookTools(server: McpServer, client: WebexClient) {
   server.registerTool(
     "webex_list_webhooks",
     {
-      description: "List webhooks for the authenticated user.",
+      description: "List webhooks.",
       inputSchema: {
         max: z.number().int().positive().max(1000).default(100),
       },
@@ -29,14 +29,14 @@ export function registerWebhookTools(server: McpServer, client: WebexClient) {
   server.registerTool(
     "webex_create_webhook",
     {
-      description: "Create a webhook to receive event notifications.",
+      description: "Create event webhook.",
       inputSchema: {
-        name: z.string().describe("User-friendly webhook name"),
-        targetUrl: z.string().describe("URL that receives POST requests for each event"),
-        resource: z.string().describe("Resource type (e.g. messages, memberships)"),
-        event: z.string().describe("Event type (e.g. created, updated, deleted)"),
-        filter: z.string().optional().describe("Filter scope (e.g. roomId=...)"),
-        secret: z.string().optional().describe("Secret used to validate webhook payloads"),
+        name: z.string().describe("Webhook name"),
+        targetUrl: z.string().describe("Event POST URL"),
+        resource: z.string().describe("Resource (e.g. messages)"),
+        event: z.string().describe("Event (created/updated/deleted)"),
+        filter: z.string().optional().describe("Filter (e.g. roomId=...)"),
+        secret: z.string().optional().describe("Signature secret"),
       },
     },
     async ({ name, targetUrl, resource, event, filter, secret }) => {
@@ -58,7 +58,7 @@ export function registerWebhookTools(server: McpServer, client: WebexClient) {
   server.registerTool(
     "webex_get_webhook",
     {
-      description: "Get webhook details by ID.",
+      description: "Get webhook by ID.",
       inputSchema: {
         webhookId: z.string().describe("Webhook ID"),
       },
@@ -69,16 +69,16 @@ export function registerWebhookTools(server: McpServer, client: WebexClient) {
   server.registerTool(
     "webex_update_webhook",
     {
-      description: "Update an existing webhook.",
+      description: "Update webhook.",
       inputSchema: {
         webhookId: z.string().describe("Webhook ID"),
-        name: z.string().optional().describe("New webhook name"),
-        targetUrl: z.string().optional().describe("New target URL"),
-        resource: z.string().optional().describe("New resource type"),
-        event: z.string().optional().describe("New event type"),
-        filter: z.string().optional().describe("New filter scope"),
-        secret: z.string().optional().describe("New webhook secret"),
-        status: z.string().optional().describe("Webhook status (active or inactive)"),
+        name: z.string().optional().describe("New name"),
+        targetUrl: z.string().optional().describe("New POST URL"),
+        resource: z.string().optional().describe("New resource"),
+        event: z.string().optional().describe("New event"),
+        filter: z.string().optional().describe("New filter"),
+        secret: z.string().optional().describe("New signature secret"),
+        status: z.string().optional().describe("Status (active/inactive)"),
       },
     },
     async ({ webhookId, name, targetUrl, resource, event, filter, secret, status }) => {
@@ -106,7 +106,7 @@ export function registerWebhookTools(server: McpServer, client: WebexClient) {
   server.registerTool(
     "webex_delete_webhook",
     {
-      description: "Delete a webhook by ID.",
+      description: "Delete webhook by ID.",
       inputSchema: {
         webhookId: z.string().describe("Webhook ID"),
       },
