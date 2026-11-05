@@ -97,7 +97,7 @@ export function registerMessageTools(server: McpServer, client: WebexClient) {
   server.registerTool(
     "webex_create_message",
     {
-      description: "Send a space/DM message or files; text optional with files.",
+      description: "Send to space (roomId) or person (toPersonEmail/Id); files allowed, text optional with files.",
       inputSchema: {
         roomId: z.string().optional().describe("Destination space ID"),
         text: z.string().optional().describe("Plain text"),
