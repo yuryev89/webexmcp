@@ -1,5 +1,6 @@
 {
   "name": "@yuryev89/webex-mcp",
+  "mcpName": "io.github.yuryev89/webex-mcp",
   "version": "0.2.8",
   "description": "Webex MCP server exposing messaging tools over stdio",
   "type": "module",
