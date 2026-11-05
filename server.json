@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.yuryev89/webex-mcp",
-  "description": "Open-source Cisco Webex Messaging MCP server for spaces, messages, people, teams, webhooks, and file attachments.",
+  "description": "Cisco Webex MCP server for messages, spaces, teams, people, webhooks and attachments.",
   "repository": {
     "url": "https://github.com/yuryev89/webexmcp",
     "source": "github"
@@ -25,5 +25,7 @@
         }
       ]
     }
-  ]
+  ],
+  "title": "Webex MCP",
+  "websiteUrl": "https://github.com/yuryev89/webexmcp"
 }
