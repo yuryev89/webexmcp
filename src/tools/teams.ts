@@ -8,7 +8,7 @@ export function registerTeamTools(server: McpServer, client: WebexClient) {
   server.registerTool(
     "webex_list_teams",
     {
-      description: "List teams for the authenticated user.",
+      description: "List accessible teams.",
       inputSchema: {
         max: z.number().int().positive().max(1000).default(100),
       },
@@ -19,10 +19,10 @@ export function registerTeamTools(server: McpServer, client: WebexClient) {
   server.registerTool(
     "webex_create_team",
     {
-      description: "Create a new Webex team.",
+      description: "Create a team.",
       inputSchema: {
-        name: z.string().describe("Team name"),
-        description: z.string().optional().describe("Team description"),
+        name: z.string().describe("Name"),
+        description: z.string().optional().describe("Description"),
       },
     },
     async ({ name, description }) => {
@@ -35,7 +35,7 @@ export function registerTeamTools(server: McpServer, client: WebexClient) {
   server.registerTool(
     "webex_get_team",
     {
-      description: "Get team details by ID.",
+      description: "Get team by ID.",
       inputSchema: {
         teamId: z.string().describe("Team ID"),
       },
@@ -46,11 +46,11 @@ export function registerTeamTools(server: McpServer, client: WebexClient) {
   server.registerTool(
     "webex_update_team",
     {
-      description: "Update a Webex team.",
+      description: "Update a team.",
       inputSchema: {
         teamId: z.string().describe("Team ID"),
-        name: z.string().optional().describe("New team name"),
-        description: z.string().optional().describe("New team description"),
+        name: z.string().optional().describe("New name"),
+        description: z.string().optional().describe("New description"),
       },
     },
     async ({ teamId, name, description }) => {
@@ -64,7 +64,7 @@ export function registerTeamTools(server: McpServer, client: WebexClient) {
   server.registerTool(
     "webex_delete_team",
     {
-      description: "Delete a Webex team by ID.",
+      description: "Delete a team by ID.",
       inputSchema: {
         teamId: z.string().describe("Team ID"),
       },
@@ -75,11 +75,11 @@ export function registerTeamTools(server: McpServer, client: WebexClient) {
   server.registerTool(
     "webex_list_team_memberships",
     {
-      description: "List team memberships.",
+      description: "List team members.",
       inputSchema: {
-        teamId: z.string().optional().describe("Filter by team ID"),
-        personId: z.string().optional().describe("Filter by person ID"),
-        personEmail: z.string().optional().describe("Filter by person email"),
+        teamId: z.string().optional().describe("Team ID filter"),
+        personId: z.string().optional().describe("Person ID filter"),
+        personEmail: z.string().optional().describe("Person email filter"),
         max: z.number().int().positive().max(1000).default(100),
       },
     },
@@ -100,12 +100,12 @@ export function registerTeamTools(server: McpServer, client: WebexClient) {
   server.registerTool(
     "webex_add_team_membership",
     {
-      description: "Add a person to a Webex team.",
+      description: "Add team member by personId or personEmail.",
       inputSchema: {
         teamId: z.string().describe("Team ID"),
-        personEmail: z.string().optional().describe("Email of the person to add"),
-        personId: z.string().optional().describe("Person ID to add"),
-        isModerator: z.boolean().optional().describe("Whether the person should be a team moderator"),
+        personEmail: z.string().optional().describe("Person email"),
+        personId: z.string().optional().describe("Person ID"),
+        isModerator: z.boolean().optional().describe("Team moderator"),
       },
     },
     async ({ teamId, personEmail, personId, isModerator }) => {
@@ -129,7 +129,7 @@ export function registerTeamTools(server: McpServer, client: WebexClient) {
   server.registerTool(
     "webex_get_team_membership",
     {
-      description: "Get team membership details by ID.",
+      description: "Get team membership by ID.",
       inputSchema: {
         membershipId: z.string().describe("Team membership ID"),
       },
@@ -140,10 +140,10 @@ export function registerTeamTools(server: McpServer, client: WebexClient) {
   server.registerTool(
     "webex_update_team_membership",
     {
-      description: "Update a team membership (e.g. moderator status).",
+      description: "Update team member's moderator status.",
       inputSchema: {
         membershipId: z.string().describe("Team membership ID"),
-        isModerator: z.boolean().optional().describe("Whether the person is a team moderator"),
+        isModerator: z.boolean().optional().describe("Team moderator"),
       },
     },
     async ({ membershipId, isModerator }) => {
@@ -156,9 +156,9 @@ export function registerTeamTools(server: McpServer, client: WebexClient) {
   server.registerTool(
     "webex_remove_team_membership",
     {
-      description: "Remove a person from a Webex team.",
+      description: "Remove team member.",
       inputSchema: {
-        membershipId: z.string().describe("Team membership ID to remove"),
+        membershipId: z.string().describe("Team membership ID"),
       },
     },
     async ({ membershipId }) => jsonResult(await client.removeTeamMembership(membershipId))
