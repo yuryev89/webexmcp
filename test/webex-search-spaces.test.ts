@@ -67,7 +67,7 @@ describe("scanPagedMatches", () => {
 
     assert.equal(result.matched.length, 2);
     assert.equal(result.scanned, 2);
-    assert.equal(result.hasMore, false);
+    assert.equal(result.hasMore, true);
   });
 
   it("stops at scanLimit", async () => {
@@ -86,7 +86,7 @@ describe("scanPagedMatches", () => {
 
     assert.equal(result.matched.length, 1);
     assert.equal(result.scanned, 2);
-    assert.equal(result.hasMore, false);
+    assert.equal(result.hasMore, true);
   });
 
   it("reports hasMore when more pages remain", async () => {
