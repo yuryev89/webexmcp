@@ -239,14 +239,32 @@ References: [OpenCode MCP documentation](https://opencode.ai/docs/mcp-servers/) 
 
 | Tool | Description |
 |------|-------------|
-| `webex_get_messages` | List messages in a space or get one by ID (`includeFileDetails` adds attachment names/types/sizes) |
-| `webex_search_messages` | Keyword search within a single space |
+| `webex_get_messages` | List messages in a space or get one by ID (`includeFileDetails` adds attachment names/types/sizes); optional compact output |
+| `webex_search_messages` | Keyword search within a single space; optional compact output |
+| `webex_get_thread_context` | Get a thread root plus up to 500 replies using a root or reply ID |
 | `webex_create_message` | Send text and/or file attachments to a space or DM |
 | `webex_update_message` | Update an existing message |
 | `webex_delete_message` | Delete a message |
 | `webex_list_direct_messages` | List messages in a 1:1 direct room (`includeFileDetails` as above) |
 | `webex_create_attachment_action` | Submit an attachment card action |
 | `webex_get_attachment_action` | Get attachment action details |
+
+#### Compact responses and thread context
+
+For `webex_get_messages`, `webex_search_messages`, `webex_list_direct_messages`,
+and `webex_get_thread_context`, set `outputMode: "compact"` to minimize JSON
+and return one message text representation instead of both `text` and `markdown`.
+The default `outputMode: "full"` preserves existing output for current clients.
+`maxTextChars` (100–10,000, default 1,200) bounds text per message when
+compact. Truncated text is flagged with `textTruncated` and `originalChars`.
+Compact output replaces attachment URLs with counts and, when
+`includeFileDetails` is enabled, attachment metadata. Use full mode for
+download URLs or unabridged text.
+
+`webex_get_thread_context` accepts `roomId`, `messageId` (root or reply),
+and `maxReplies` (default 100, max 500). It resolves the root, collects
+thread replies over multiple Webex pages and returns `hasMore` if the
+result was capped. Thread access is restricted to the supplied space.
 
 #### Sending file attachments
 
