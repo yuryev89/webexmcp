@@ -241,12 +241,37 @@ References: [OpenCode MCP documentation](https://opencode.ai/docs/mcp-servers/) 
 |------|-------------|
 | `webex_get_messages` | List messages in a space or get one by ID (`includeFileDetails` adds attachment names/types/sizes) |
 | `webex_search_messages` | Keyword search within a single space |
+| `webex_search_all_messages` | Bounded keyword search across selected or recently active spaces |
 | `webex_create_message` | Send text and/or file attachments to a space or DM |
 | `webex_update_message` | Update an existing message |
 | `webex_delete_message` | Delete a message |
 | `webex_list_direct_messages` | List messages in a 1:1 direct room (`includeFileDetails` as above) |
 | `webex_create_attachment_action` | Submit an attachment card action |
 | `webex_get_attachment_action` | Get attachment action details |
+
+#### Search across spaces (bounded live scan)
+
+`webex_search_all_messages` searches case-insensitive text/markdown across
+multiple spaces. Supply `roomIds` for a known set of up to 100 space IDs;
+otherwise the tool discovers up to `maxSpaces` recently active spaces
+(default 10, maximum 100) and searches those only. There is **no global
+Webex message search endpoint** and this tool does not search every accessible
+space unless you explicitly supply the relevant IDs.
+
+```json
+{"query":"deployment","roomIds":["SPACE_1","SPACE_2"],"maxResults":20}
+```
+
+Default limits: 200 scanned messages per space, 20 returned matches,
+3 concurrent per-space scans, 320 characters per matching snippet.
+Use `scanLimitPerSpace`, `concurrency` (max 4), `maxResults`,
+`maxSnippetChars`, and optional `before` to change these bounds.
+Results are sorted newest first and include message/space IDs, dates,
+snippets, scan counts, failures, and `partial` when the search may be
+incomplete. In recent-space discovery mode `partial` is always true because
+only the newest spaces are considered. A failed space is reported instead of
+silently dropping it. Expanding the scope can trigger significant API traffic
+and rate limits; start with explicit `roomIds` and small bounds.
 
 #### Sending file attachments
 

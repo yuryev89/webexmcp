@@ -38,18 +38,18 @@ export async function scanPagedMatches<T>(params: {
   let page = await params.fetchFirstPage();
 
   while (true) {
-    for (const item of page.items) {
+    for (let i = 0; i < page.items.length; i++) {
+      const item = page.items[i]!;
       scanned++;
+      const unseenItems = i < page.items.length - 1 || Boolean(page.next);
       if (params.matches(item)) {
         matched.push(item);
         if (matched.length >= params.maxResults) {
-          hasMore = scanned < params.scanLimit && Boolean(page.next);
-          return { matched, scanned, hasMore };
+          return { matched, scanned, hasMore: unseenItems };
         }
       }
       if (scanned >= params.scanLimit) {
-        hasMore = Boolean(page.next);
-        return { matched, scanned, hasMore };
+        return { matched, scanned, hasMore: unseenItems };
       }
     }
 
