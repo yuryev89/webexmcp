@@ -353,6 +353,51 @@ If Webex is still virus-scanning a file it answers `423 Locked`; downloads wait 
 | `webex_update_webhook` | Update a webhook |
 | `webex_delete_webhook` | Delete a webhook |
 
+## Optional local message search index (Node.js 22.13+)
+
+The server can build an **opt-in** SQLite FTS5 index for selected spaces.
+The rest of Webex MCP continues to work on Node.js 18+. No native npm
+add-on or external search service is required.
+
+| Tool | Purpose |
+|------|---------|
+| `webex_index_sync` | Index up to 20 explicitly selected accessible spaces per call |
+| `webex_index_search` | Fast FTS5 word/phrase search; re-checks live message access |
+| `webex_index_status` | Show local index counts and file path |
+| `webex_index_purge` | Delete indexed data for selected spaces or the account (requires `confirm: true`) |
+
+Example sync input:
+
+```json
+{"roomIds":["SPACE_1","SPACE_2"],"maxMessagesPerSpace":200,"mode":"replace"}
+```
+
+Then search with `{"query":"upgrade plan","maxResults":20}`.
+Search uses SQLite FTS5 phrases, **not substring matching**. Results
+include message IDs, space IDs, snippets and author/time metadata.
+
+- **Explicit only:** no automatic indexing, scheduled sync, or background monitoring.
+  `replace` (default) rebuilds the *latest N messages* for each selected
+  space, purging older/deleted cached rows for those spaces. It does not
+  claim to index complete space history if N is too small.
+  `incremental` appends newer messages until the newest previously indexed
+  message, but cannot detect edits/deletions of older rows. Use periodic
+  `replace` when freshness matters.
+- **Account isolation:** each authenticated Webex account has a separate
+  local file, identified by a hash of its Webex person ID.
+  Files are written under `~/.cache/webex-mcp/message-index/` with
+  restricted filesystem permissions.
+- **Access checks:** search checks both live space access and each candidate
+  message's availability before returning cached text. If Webex cannot
+  verify access, results are excluded rather than exposed. Indexed search
+  therefore requires an active Webex connection.
+- **Local privacy:** message bodies remain **unencrypted plaintext on disk**
+  in SQLite. Review your organization's data-handling requirements before
+  opting in. Use `webex_index_purge` to delete rows; the SQLite file and
+  journal may still require secure filesystem-level deletion under your policy.
+- FTS5 indexes are limited to the spaces/messages previously synced and may
+  be stale until refreshed; they are not a native global search API.
+
 ## Limitations
 
 - `webex_search_messages` works within a **single space** only (Webex REST API has no global search)
