@@ -3,6 +3,12 @@ import { z } from "zod";
 import { isAbsolute } from "node:path";
 import type { WebexClient } from "../webex.js";
 import { jsonResult } from "./common.js";
+import { presentMessage, presentMessages } from "../message-output.js";
+
+const outputModeSchema = z.enum(["full", "compact"]).default("full")
+  .describe("Full response (default) or token-saving compact response");
+const maxTextCharsSchema = z.number().int().min(100).max(10000).default(1200)
+  .describe("Max message text chars in compact mode");
 
 const includeFileDetailsSchema = z
   .boolean()
@@ -44,9 +50,11 @@ export function registerMessageTools(server: McpServer, client: WebexClient) {
         mentionedPeople: z.string().optional().describe("Mentioned person IDs"),
         max: z.number().int().positive().max(1000).default(50),
         includeFileDetails: includeFileDetailsSchema,
+        outputMode: outputModeSchema,
+        maxTextChars: maxTextCharsSchema,
       },
     },
-    async ({ roomId, messageId, before, beforeMessage, mentionedPeople, max, includeFileDetails }) => {
+    async ({ roomId, messageId, before, beforeMessage, mentionedPeople, max, includeFileDetails, outputMode, maxTextChars }) => {
       const params: {
         roomId?: string;
         messageId?: string;
@@ -61,10 +69,10 @@ export function registerMessageTools(server: McpServer, client: WebexClient) {
       if (beforeMessage) params.beforeMessage = beforeMessage;
       if (mentionedPeople) params.mentionedPeople = mentionedPeople;
       const result = await client.getMessages(params);
-      if (includeFileDetails) {
-        return jsonResult({ ...result, messages: await client.addFileDetails(result.messages) });
-      }
-      return jsonResult(result);
+      const withFiles = includeFileDetails
+        ? { ...result, messages: await client.addFileDetails(result.messages) }
+        : result;
+      return jsonResult(presentMessages(withFiles, outputMode, maxTextChars), outputMode === "compact");
     }
   );
 
@@ -79,9 +87,11 @@ export function registerMessageTools(server: McpServer, client: WebexClient) {
         maxResults: z.number().int().positive().max(100).default(20),
         scanLimit: z.number().int().positive().max(5000).default(500),
         before: z.string().optional().describe("Scan before date/time"),
+        outputMode: outputModeSchema,
+        maxTextChars: maxTextCharsSchema,
       },
     },
-    async ({ roomId, query, maxResults, scanLimit, before }) => {
+    async ({ roomId, query, maxResults, scanLimit, before, outputMode, maxTextChars }) => {
       const params: {
         roomId: string;
         query: string;
@@ -90,7 +100,30 @@ export function registerMessageTools(server: McpServer, client: WebexClient) {
         before?: string;
       } = { roomId, query, maxResults, scanLimit };
       if (before) params.before = before;
-      return jsonResult(await client.searchMessages(params));
+      const result = await client.searchMessages(params);
+      return jsonResult(presentMessages(result, outputMode, maxTextChars), outputMode === "compact");
+    }
+  );
+
+  server.registerTool(
+    "webex_get_thread_context",
+    {
+      description: "Get thread root and bounded replies for a message or reply.",
+      inputSchema: {
+        roomId: z.string().describe("Space ID"),
+        messageId: z.string().describe("Root or reply message ID"),
+        maxReplies: z.number().int().positive().max(500).default(100),
+        outputMode: outputModeSchema,
+        maxTextChars: maxTextCharsSchema,
+      },
+    },
+    async ({ roomId, messageId, maxReplies, outputMode, maxTextChars }) => {
+      const result = await client.getThreadContext({ roomId, messageId, maxReplies });
+      return jsonResult({
+        ...result,
+        root: presentMessage(result.root, outputMode, maxTextChars),
+        replies: result.replies.map((message) => presentMessage(message, outputMode, maxTextChars)),
+      }, outputMode === "compact");
     }
   );
 
@@ -192,9 +225,11 @@ export function registerMessageTools(server: McpServer, client: WebexClient) {
         personId: z.string().optional().describe("DM person ID"),
         personEmail: z.string().optional().describe("DM person email"),
         includeFileDetails: includeFileDetailsSchema,
+        outputMode: outputModeSchema,
+        maxTextChars: maxTextCharsSchema,
       },
     },
-    async ({ parentId, personId, personEmail, includeFileDetails }) => {
+    async ({ parentId, personId, personEmail, includeFileDetails, outputMode, maxTextChars }) => {
       validateDirectMessageParams({
         ...(personId ? { personId } : {}),
         ...(personEmail ? { personEmail } : {}),
@@ -208,10 +243,10 @@ export function registerMessageTools(server: McpServer, client: WebexClient) {
       if (personId) params.personId = personId;
       if (personEmail) params.personEmail = personEmail;
       const result = await client.listDirectMessages(params);
-      if (includeFileDetails) {
-        return jsonResult({ ...result, messages: await client.addFileDetails(result.messages) });
-      }
-      return jsonResult(result);
+      const withFiles = includeFileDetails
+        ? { ...result, messages: await client.addFileDetails(result.messages) }
+        : result;
+      return jsonResult(presentMessages(withFiles, outputMode, maxTextChars), outputMode === "compact");
     }
   );
 
