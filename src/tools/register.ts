@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { WebexClient } from "../webex.js";
+import { registerMessageIndexTools } from "./message-index.js";
 import { registerFileTools } from "./files.js";
 import { registerMembershipTools } from "./memberships.js";
 import { registerMessageTools } from "./messages.js";
@@ -16,4 +17,5 @@ export function registerAllTools(server: McpServer, client: WebexClient) {
   registerPeopleTools(server, client);
   registerTeamTools(server, client);
   registerWebhookTools(server, client);
+  registerMessageIndexTools(server, client);
 }
