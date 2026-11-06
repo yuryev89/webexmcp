@@ -11,6 +11,7 @@ const created = "2026-11-01T12:00:00Z";
 function mockClient(
   messages: () => Message[],
   accessible = (_roomId: string) => true,
+  canReadMessage = (_messageId: string) => true,
 ): MessageIndexClient {
   return {
     getPerson: async () => ({ id: "test-account" }),
@@ -18,7 +19,11 @@ function mockClient(
       if (!accessible(roomId)) throw new Error("403 Forbidden");
       return { id: roomId };
     },
-    getMessages: async ({ roomId, max, beforeMessage }) => {
+    getMessages: async ({ roomId, max, beforeMessage, messageId }) => {
+      if (messageId) {
+        const found = messages().filter((m) => m.id === messageId && canReadMessage(m.id));
+        return { messages: found };
+      }
       const list = messages().filter((m) => m.roomId === roomId);
       const pos = beforeMessage ? list.findIndex((m) => m.id === beforeMessage) + 1 : 0;
       return { total: list.slice(pos, pos + (max ?? 50)).length,
@@ -97,6 +102,22 @@ describe("local SQLite FTS5 message index", () => {
     const result = await index.search({ query: "confidential" });
     assert.equal(result.returned, 0);
     assert.deepEqual(result.excludedSpaces, ["a"]);
+    assert.equal(result.partial, true);
+  });
+
+  it("excludes cached messages when historical message access is lost", async () => {
+    let readable = true;
+    const client = mockClient(
+      () => [{ id: "private", roomId: "a", text: "sensitive", created }],
+      () => true,
+      () => readable,
+    );
+    const index = createMessageIndex(client, { baseDir: await testDir() });
+    await index.sync({ roomIds: ["a"] });
+    readable = false;
+    const result = await index.search({ query: "sensitive" });
+    assert.equal(result.returned, 0);
+    assert.equal(result.staleMessages, 1);
     assert.equal(result.partial, true);
   });
 
