@@ -220,6 +220,7 @@ export function createMessageIndex(client: MessageIndexClient, options?: { baseD
     // losing access to a space must not expose stale indexed messages.
     const permissions = new Map<string, boolean>();
     const excludedSpaces: string[] = [];
+    let staleMessages = 0;
     const messages: Array<{
       id: string; roomId: string; snippet: string;
       personEmail?: string; created?: string; parentId?: string;
@@ -235,6 +236,18 @@ export function createMessageIndex(client: MessageIndexClient, options?: { baseD
         }
       }
       if (!permissions.get(row.room_id)) continue;
+      // Space membership alone is insufficient: a rejoined member may not
+      // be able to read historical messages. Recheck each message ID live.
+      try {
+        const live = await client.getMessages({ messageId: row.id });
+        if (!live.messages.some((m) => m.id === row.id && m.roomId === row.room_id)) {
+          staleMessages++;
+          continue;
+        }
+      } catch {
+        staleMessages++;
+        continue;
+      }
       messages.push({
         id: row.id, roomId: row.room_id, snippet: row.snippet,
         ...(row.person_email ? { personEmail: row.person_email } : {}),
@@ -246,8 +259,8 @@ export function createMessageIndex(client: MessageIndexClient, options?: { baseD
 
     return {
       query, returned: messages.length,
-      partial: candidates.length >= maxResults * 5 || excludedSpaces.length > 0,
-      excludedSpaces, messages,
+      partial: candidates.length >= maxResults * 5 || excludedSpaces.length > 0 || staleMessages > 0,
+      excludedSpaces, staleMessages, messages,
     };
   }
 
