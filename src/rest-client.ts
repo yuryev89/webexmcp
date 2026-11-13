@@ -19,14 +19,45 @@ export type RestClientOpts = {
   getAccessToken: () => string;
   fedramp?: boolean;
   refreshToken?: () => Promise<string>;
-  /** Injected in tests so 423 retries do not really wait. */
+  /** Injected in tests so 423/429 retries do not really wait. */
   sleep?: (ms: number) => Promise<void>;
 };
 
+type Query = Record<string, string | number | boolean | undefined>;
+
 type RequestOpts = {
-  query?: Record<string, string | number | boolean | undefined>;
+  query?: Query;
   body?: unknown;
+  /** Multipart body; fetch sets the Content-Type with its boundary. */
+  form?: FormData;
 };
+
+type Method = "GET" | "POST" | "PUT" | "DELETE";
+
+/** A non-2xx answer from the Webex REST API. */
+export class WebexApiError extends Error {
+  statusCode: number;
+  trackingId?: string;
+
+  constructor(message: string, statusCode: number, trackingId?: string) {
+    super(message);
+    this.name = "WebexApiError";
+    this.statusCode = statusCode;
+    if (trackingId) this.trackingId = trackingId;
+  }
+}
+
+/** One page of a Webex list, shaped like the webex-node SDK pages. */
+export interface Page<T> {
+  items: T[];
+  next?: () => Promise<Page<T>>;
+}
+
+const RATE_LIMIT_RETRIES = 3;
+
+function nextLink(header: string | null): string | undefined {
+  return header?.match(/<([^>]+)>\s*;\s*rel="?next"?/)?.[1];
+}
 
 function isAuthStatus(status: number): boolean {
   return status === 401;
@@ -51,27 +82,31 @@ export function createRestClient(opts: RestClientOpts) {
     return `${getApiBaseUrl(opts.fedramp ?? false)}/v1`;
   }
 
-  async function request<T>(
-    method: string,
-    path: string,
-    options: RequestOpts = {}
-  ): Promise<T> {
-    const url = new URL(`${baseUrl()}${path.startsWith("/") ? path : `/${path}`}`);
-    if (options.query) {
-      for (const [key, value] of Object.entries(options.query)) {
+  /** `path` is relative to `/v1`, or an absolute URL such as a `Link: rel="next"` target. */
+  function buildUrl(path: string, query?: Query): URL {
+    const url = /^https?:\/\//i.test(path)
+      ? new URL(path)
+      : new URL(`${baseUrl()}${path.startsWith("/") ? path : `/${path}`}`);
+    if (query) {
+      for (const [key, value] of Object.entries(query)) {
         if (value !== undefined) {
           url.searchParams.set(key, String(value));
         }
       }
     }
+    return url;
+  }
 
+  async function send(method: Method, url: URL, options: RequestOpts): Promise<Response> {
     const headers: Record<string, string> = {
       Accept: "application/json",
       Authorization: `Bearer ${opts.getAccessToken()}`,
     };
 
     const init: RequestInit = { method, headers };
-    if (options.body !== undefined) {
+    if (options.form) {
+      init.body = options.form;
+    } else if (options.body !== undefined) {
       headers["Content-Type"] = "application/json";
       init.body = JSON.stringify(options.body);
     }
@@ -84,15 +119,41 @@ export function createRestClient(opts: RestClientOpts) {
       response = await fetch(url, { ...init, headers });
     }
 
-    if (!response.ok) {
-      throw new Error(await parseErrorBody(response));
+    // 429 Too Many Requests: wait as told and try again, like the SDK did.
+    for (let attempt = 0; response.status === 429 && attempt < RATE_LIMIT_RETRIES; attempt += 1) {
+      await (opts.sleep ?? defaultSleep)(retryAfterMs(response.headers.get("retry-after")));
+      response = await fetch(url, { ...init, headers });
     }
 
+    if (!response.ok) {
+      throw new WebexApiError(
+        await parseErrorBody(response),
+        response.status,
+        response.headers.get("trackingid") ?? undefined
+      );
+    }
+
+    return response;
+  }
+
+  async function request<T>(method: Method, path: string, options: RequestOpts = {}): Promise<T> {
+    const response = await send(method, buildUrl(path, options.query), options);
     if (response.status === 204) {
       return { deleted: true } as T;
     }
-
     return (await response.json()) as T;
+  }
+
+  async function list<T>(path: string, query?: Query): Promise<Page<T>> {
+    const response = await send("GET", buildUrl(path, query), {});
+    const data = (await response.json()) as { items?: T[] };
+    const page: Page<T> = { items: data.items ?? [] };
+    const next = nextLink(response.headers.get("link"));
+    if (next) {
+      // The link already carries every query parameter and the cursor: request it as-is.
+      page.next = () => list<T>(next);
+    }
+    return page;
   }
 
   async function getSpaceMeetingInfo(roomId: string) {
@@ -234,6 +295,8 @@ export function createRestClient(opts: RestClientOpts) {
   }
 
   return {
+    request,
+    list,
     getSpaceMeetingInfo,
     listDirectMessages,
     deleteTeam,

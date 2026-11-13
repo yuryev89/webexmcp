@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it, mock } from "node:test";
-import { createRestClient } from "../src/rest-client.js";
+import { WebexApiError, createRestClient } from "../src/rest-client.js";
 
 function mockResponse(
   status: number,
@@ -211,5 +211,124 @@ describe("rest-client", () => {
       () => client.getContents("https://webexapis.com/v1/contents/huge"),
       /download limit/
     );
+  });
+});
+
+describe("rest-client request and list", () => {
+  let fetchMock: ReturnType<typeof mock.fn>;
+  let responses: Array<ReturnType<typeof mockResponse>>;
+  let urls: string[];
+  let auths: string[];
+
+  before(() => {
+    fetchMock = mock.fn(async (url: string | URL, init?: RequestInit) => {
+      urls.push(String(url));
+      auths.push((init?.headers as Record<string, string>).Authorization ?? "");
+      const next = responses.shift();
+      assert.ok(next, `unexpected fetch ${String(url)}`);
+      return next;
+    });
+    mock.method(globalThis, "fetch", fetchMock);
+  });
+
+  beforeEach(() => {
+    responses = [];
+    urls = [];
+    auths = [];
+  });
+
+  after(() => {
+    mock.restoreAll();
+  });
+
+  it("request throws WebexApiError with statusCode", async () => {
+    responses.push(
+      mockResponse(404, { message: "Room not found" }, "Not Found", { trackingid: "T-1" })
+    );
+    const client = createRestClient({ getAccessToken: () => "t" });
+    await assert.rejects(
+      () => client.request("GET", "/rooms/x"),
+      (err: unknown) => {
+        assert.ok(err instanceof WebexApiError);
+        assert.equal(err.statusCode, 404);
+        assert.equal(err.message, "Room not found");
+        assert.equal(err.trackingId, "T-1");
+        return true;
+      }
+    );
+  });
+
+  // Review Focus 3
+  it("request retries 429 using Retry-After", async () => {
+    responses.push(
+      mockResponse(429, { message: "slow down" }, "Too Many Requests", { "retry-after": "1" }),
+      mockResponse(200, { id: "r1" })
+    );
+    const sleeps: number[] = [];
+    const client = createRestClient({
+      getAccessToken: () => "t",
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+    });
+    assert.deepEqual(await client.request("GET", "/rooms/r1"), { id: "r1" });
+    assert.deepEqual(sleeps, [1000]);
+    assert.equal(urls.length, 2);
+  });
+
+  it("request gives up after repeated 429s", async () => {
+    for (let i = 0; i < 4; i += 1) {
+      responses.push(
+        mockResponse(429, { message: "slow down" }, "Too Many Requests", { "retry-after": "1" })
+      );
+    }
+    const client = createRestClient({ getAccessToken: () => "t", sleep: async () => {} });
+    await assert.rejects(
+      () => client.request("GET", "/messages"),
+      (err: unknown) => err instanceof WebexApiError && err.statusCode === 429
+    );
+  });
+
+  // Review Focus 1
+  it("list follows Link next verbatim", async () => {
+    const nextUrl = "https://webexapis.com/v1/messages?roomId=R&max=1&beforeMessage=X";
+    responses.push(
+      mockResponse(200, { items: [{ id: "a" }] }, "OK", { link: `<${nextUrl}>; rel="next"` }),
+      mockResponse(200, { items: [{ id: "b" }] })
+    );
+    const client = createRestClient({ getAccessToken: () => "t" });
+    const page1 = await client.list<{ id: string }>("/messages", { roomId: "R", max: 1 });
+    assert.deepEqual(page1.items, [{ id: "a" }]);
+    assert.ok(page1.next);
+    const page2 = await page1.next();
+    assert.deepEqual(page2.items, [{ id: "b" }]);
+    assert.equal(page2.next, undefined);
+    assert.equal(urls[1], nextUrl);
+  });
+
+  // Review Focus 2
+  it("list next refreshes token on 401", async () => {
+    let token = "old";
+    let refreshes = 0;
+    responses.push(
+      mockResponse(200, { items: [{ id: "a" }] }, "OK", {
+        link: '<https://webexapis.com/v1/rooms?cursor=2>; rel="next"',
+      }),
+      mockResponse(401, { message: "token expired" }, "Unauthorized"),
+      mockResponse(200, { items: [{ id: "b" }] })
+    );
+    const client = createRestClient({
+      getAccessToken: () => token,
+      refreshToken: async () => {
+        refreshes += 1;
+        token = "new";
+        return token;
+      },
+    });
+    const page1 = await client.list<{ id: string }>("/rooms");
+    const page2 = await page1.next!();
+    assert.deepEqual(page2.items, [{ id: "b" }]);
+    assert.equal(refreshes, 1);
+    assert.deepEqual(auths, ["Bearer old", "Bearer old", "Bearer new"]);
   });
 });
