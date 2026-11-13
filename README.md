@@ -15,12 +15,12 @@ Minimal MCP server that exposes Webex messaging tools over stdio. Works with Cur
 - Full core Webex Messaging API coverage: spaces, messages, memberships, people, teams, webhooks, attachment actions, and file downloads
 - Received attachments for agents: images inline, text paged inline, ZIP/JAR listings, and saving any file to local disk
 - Search spaces and messages by keyword (client-side scan)
-- Bearer token authentication via `webex-node` SDK with REST fallback for select endpoints
+- Direct calls to the Webex REST API over `fetch` (no Webex SDK), with rate-limit retries and pagination
 - OAuth 2.0 Integration login with automatic token refresh
 
 ## Requirements
 
-- Node.js >= 18
+- Node.js >= 22
 - Webex Bot access token **or** Webex Integration (OAuth) — [developer.webex.com](https://developer.webex.com)
 
 ## Quick start
