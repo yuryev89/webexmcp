@@ -521,7 +521,7 @@ export function createWebexClient(opts: WebexOpts) {
     maxReplies?: number;
   }) {
     return withAuthRetry(async () => {
-      const selected = normalizeMessage(await webex.messages.get(params.messageId));
+      const selected = normalizeMessage(await api.messages.get(params.messageId));
       if (selected.roomId && selected.roomId !== params.roomId) {
         throw new Error("Message belongs to a different space");
       }
@@ -529,7 +529,7 @@ export function createWebexClient(opts: WebexOpts) {
       const rootId = selected.parentId ?? selected.id;
       if (!rootId) throw new Error("Message has no ID");
       const root = selected.parentId
-        ? normalizeMessage(await webex.messages.get(rootId))
+        ? normalizeMessage(await api.messages.get(rootId))
         : selected;
       if (root.roomId && root.roomId !== params.roomId) {
         throw new Error("Thread root belongs to a different space");
@@ -537,7 +537,7 @@ export function createWebexClient(opts: WebexOpts) {
 
       const limit = Math.max(1, Math.min(params.maxReplies ?? 100, 500));
       const replies: ReturnType<typeof normalizeMessage>[] = [];
-      let page = await webex.messages.list({
+      let page = await api.messages.list({
         roomId: params.roomId, parentId: rootId, max: Math.min(limit, 100),
       });
 

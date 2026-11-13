@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
-import { createRequire } from "node:module";
 import { afterEach, describe, it, mock } from "node:test";
 import { createWebexClient } from "../src/webex.js";
 import { presentMessage, presentMessages } from "../src/message-output.js";
-
-const Webex = createRequire(import.meta.url)("webex-node");
 
 describe("compact message output", () => {
   const message = {
@@ -43,38 +40,58 @@ describe("Webex thread context", () => {
   afterEach(() => mock.restoreAll());
 
   it("resolves a reply to its root and reads multiple reply pages", async () => {
-    const listed: Record<string, unknown>[] = [];
-    mock.method(Webex, "init", () => ({ messages: {
-      get: async (id: string) => id === "child"
-        ? { id: "child", roomId: "r1", parentId: "root", text: "reply" }
-        : { id: "root", roomId: "r1", text: "question" },
-      list: async (opts: Record<string, unknown>) => {
-        listed.push(opts);
-        return {
+    const requests: URL[] = [];
+    mock.method(globalThis, "fetch", async (input: string | URL) => {
+      const url = new URL(String(input));
+      requests.push(url);
+
+      if (url.pathname === "/v1/messages/child") {
+        return Response.json({ id: "child", roomId: "r1", parentId: "root", text: "reply" });
+      }
+      if (url.pathname === "/v1/messages/root") {
+        return Response.json({ id: "root", roomId: "r1", text: "question" });
+      }
+      if (url.pathname === "/v1/messages" && url.searchParams.get("cursor") === "next") {
+        return Response.json({ items: [
+          { id: "b", parentId: "root", roomId: "r1", text: "two" },
+          { id: "c", parentId: "root", roomId: "r1", text: "three" },
+        ] });
+      }
+      if (url.pathname === "/v1/messages") {
+        return Response.json({
           items: [{ id: "a", parentId: "root", roomId: "r1", text: "one" }],
-          next: async () => ({ items: [
-            { id: "b", parentId: "root", roomId: "r1", text: "two" },
-            { id: "c", parentId: "root", roomId: "r1", text: "three" },
-          ] }),
-        };
-      },
-    } }));
+        }, {
+          headers: { link: '<https://webexapis.com/v1/messages?cursor=next>; rel="next"' },
+        });
+      }
+      return Response.json({ message: "Not found" }, { status: 404 });
+    });
+
     const client = createWebexClient({ token: "test" });
     const result = await client.getThreadContext({ roomId: "r1", messageId: "child", maxReplies: 2 });
     assert.equal(result.root.id, "root");
     assert.deepEqual(result.replies.map((r) => r.id), ["a", "b"]);
     assert.equal(result.hasMore, true);
-    assert.equal(listed[0]?.parentId, "root");
+    assert.deepEqual(requests.map((request) => request.pathname), [
+      "/v1/messages/child", "/v1/messages/root", "/v1/messages", "/v1/messages",
+    ]);
+    assert.equal(requests[2]?.searchParams.get("parentId"), "root");
+    assert.equal(requests[2]?.searchParams.get("roomId"), "r1");
+    assert.equal(requests[2]?.searchParams.get("max"), "2");
   });
 
   it("refuses to mix messages from different rooms", async () => {
-    mock.method(Webex, "init", () => ({ messages: {
-      get: async () => ({ id: "m1", roomId: "other", text: "private" }),
-    } }));
+    const requests: string[] = [];
+    mock.method(globalThis, "fetch", async (input: string | URL) => {
+      const url = new URL(String(input));
+      requests.push(url.pathname);
+      return Response.json({ id: "m1", roomId: "other", text: "private" });
+    });
     const client = createWebexClient({ token: "test" });
     await assert.rejects(
       () => client.getThreadContext({ roomId: "r1", messageId: "m1" }),
       /different space/
     );
+    assert.deepEqual(requests, ["/v1/messages/m1"]);
   });
 });
