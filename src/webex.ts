@@ -1,4 +1,3 @@
-import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import { openAsBlob } from "node:fs";
 import { stat } from "node:fs/promises";
@@ -29,7 +28,8 @@ import {
   type RawTeamMembership,
   type RawWebhook,
 } from "./normalize.js";
-import { createRestClient } from "./rest-client.js";
+import { createWebexApi } from "./resources.js";
+import { createRestClient, type Query } from "./rest-client.js";
 import { matchesMessageText, matchesSpaceTitle, scanPagedMatches } from "./search.js";
 import {
   createEmptyCacheRecord,
@@ -43,71 +43,6 @@ import {
   SpacesCacheStore,
   upsertCachedSpaces,
 } from "./spaces-cache.js";
-
-const require = createRequire(import.meta.url);
-const Webex = require("webex-node") as {
-  init: (config: {
-    config?: { fedramp?: boolean };
-    credentials: { access_token: string };
-  }) => WebexInstance;
-};
-
-type WebexPage<T> = {
-  items: T[];
-  next?: () => Promise<WebexPage<T>>;
-};
-
-type WebexInstance = {
-  rooms: {
-    list: (opts?: Record<string, unknown>) => Promise<WebexPage<RawSpace>>;
-    get: (id: string | { id: string }) => Promise<RawSpace>;
-    create: (opts: Record<string, unknown>) => Promise<RawSpace>;
-    update: (room: Record<string, unknown>) => Promise<RawSpace>;
-    remove: (room: string | { id: string }) => Promise<void>;
-  };
-  messages: {
-    list: (opts: Record<string, unknown>) => Promise<WebexPage<RawMessage>>;
-    get: (id: string) => Promise<RawMessage>;
-    create: (opts: Record<string, unknown>) => Promise<RawMessage>;
-    update: (message: Record<string, unknown>) => Promise<RawMessage>;
-    remove: (message: string | { id: string }) => Promise<void>;
-  };
-  people: {
-    list: (opts?: Record<string, unknown>) => Promise<WebexPage<RawPerson>>;
-    get: (person: string | { id: string }) => Promise<RawPerson>;
-  };
-  memberships: {
-    list: (opts?: Record<string, unknown>) => Promise<WebexPage<RawMembership>>;
-    get: (membership: string | { id: string }) => Promise<RawMembership>;
-    create: (opts: Record<string, unknown>) => Promise<RawMembership>;
-    update: (membership: Record<string, unknown>) => Promise<RawMembership>;
-    remove: (membership: string | { id: string }) => Promise<void>;
-  };
-  teams: {
-    list: (opts?: Record<string, unknown>) => Promise<WebexPage<RawTeam>>;
-    get: (team: string | { id: string }) => Promise<RawTeam>;
-    create: (team: Record<string, unknown>) => Promise<RawTeam>;
-    update: (team: Record<string, unknown>) => Promise<RawTeam>;
-  };
-  teamMemberships: {
-    list: (opts?: Record<string, unknown>) => Promise<WebexPage<RawTeamMembership>>;
-    get: (membership: string | { id: string }) => Promise<RawTeamMembership>;
-    create: (opts: Record<string, unknown>) => Promise<RawTeamMembership>;
-    update: (membership: Record<string, unknown>) => Promise<RawTeamMembership>;
-    remove: (membership: string | { id: string }) => Promise<void>;
-  };
-  webhooks: {
-    list: (opts?: Record<string, unknown>) => Promise<WebexPage<RawWebhook>>;
-    get: (webhook: string | { id: string }) => Promise<RawWebhook>;
-    create: (webhook: Record<string, unknown>) => Promise<RawWebhook>;
-    update: (webhook: Record<string, unknown>) => Promise<RawWebhook>;
-    remove: (webhook: string | { id: string }) => Promise<void>;
-  };
-  attachmentActions: {
-    create: (action: Record<string, unknown>) => Promise<RawAttachmentAction>;
-    get: (action: string | { id: string }) => Promise<RawAttachmentAction>;
-  };
-};
 
 export type WebexOpts = {
   token: string;
@@ -168,23 +103,6 @@ export function createWebexClient(opts: WebexOpts) {
     : null;
   let syncInFlight: Promise<unknown> | null = null;
 
-  function initWebex(accessToken: string): WebexInstance {
-    const initConfig: {
-      config?: { fedramp: boolean };
-      credentials: { access_token: string };
-    } = {
-      credentials: { access_token: accessToken },
-    };
-
-    if (opts.fedramp) {
-      initConfig.config = { fedramp: true };
-    }
-
-    return Webex.init(initConfig);
-  }
-
-  let webex = initWebex(currentToken);
-
   const restOpts: {
     getAccessToken: () => string;
     fedramp?: boolean;
@@ -196,6 +114,7 @@ export function createWebexClient(opts: WebexOpts) {
     restOpts.refreshToken = async () => (currentToken = await getToken());
   }
   const rest = createRestClient(restOpts);
+  const api = createWebexApi(rest);
 
   async function loadSpacesCache(): Promise<SpacesCacheRecord> {
     if (!spacesCacheStore) {
@@ -227,7 +146,7 @@ export function createWebexClient(opts: WebexOpts) {
   }> {
     const spaces: CachedSpace[] = [];
     let complete = false;
-    let page = await webex.rooms.list({ max: 100, sortBy: "lastactivity" });
+    let page = await api.rooms.list({ max: 100, sortBy: "lastactivity" });
 
     while (true) {
       for (const item of page.items) {
@@ -303,7 +222,6 @@ export function createWebexClient(opts: WebexOpts) {
       }
 
       currentToken = await opts.getToken();
-      webex = initWebex(currentToken);
       return fn();
     }
   }
@@ -318,7 +236,7 @@ export function createWebexClient(opts: WebexOpts) {
     sortBy?: string;
   }) {
     return withAuthRetry(async () => {
-      const listOpts: Record<string, unknown> = {};
+      const listOpts: Query = {};
       if (params.type) {
         listOpts.type = params.type;
       } else if (params.orgPublicSpaces !== undefined) {
@@ -330,7 +248,7 @@ export function createWebexClient(opts: WebexOpts) {
       if (params.sortBy) listOpts.sortBy = params.sortBy;
       listOpts.max = params.max ?? 100;
 
-      const page = await webex.rooms.list(listOpts);
+      const page = await api.rooms.list(listOpts);
       const spaces = page.items.map((s) => normalizeSpace(s));
 
       return { total: spaces.length, spaces };
@@ -339,7 +257,7 @@ export function createWebexClient(opts: WebexOpts) {
 
   async function getSpace(roomId: string) {
     return withAuthRetry(async () => {
-      const space = await webex.rooms.get(roomId);
+      const space = await api.rooms.get(roomId);
       return normalizeSpace(space);
     });
   }
@@ -362,7 +280,7 @@ export function createWebexClient(opts: WebexOpts) {
         body.isAnnouncementOnly = params.isAnnouncementOnly;
       }
 
-      const space = await webex.rooms.update(body);
+      const space = await api.rooms.update(body);
       const normalized = normalizeSpace(space);
       const cached = toCachedSpace(normalized);
       if (cached) {
@@ -374,7 +292,7 @@ export function createWebexClient(opts: WebexOpts) {
 
   async function deleteSpace(roomId: string) {
     return withAuthRetry(async () => {
-      await webex.rooms.remove(roomId);
+      await api.rooms.remove(roomId);
       await cacheSpaceMutation((record) => removeCachedSpace(record, roomId));
       return { deleted: true, roomId };
     });
@@ -422,12 +340,12 @@ export function createWebexClient(opts: WebexOpts) {
         }
       }
 
-      const listOpts: Record<string, unknown> = { max: 100, sortBy };
+      const listOpts: Query = { max: 100, sortBy };
       if (params.type) listOpts.type = params.type;
       if (params.teamId) listOpts.teamId = params.teamId;
 
       const { matched, scanned, hasMore } = await scanPagedMatches({
-        fetchFirstPage: () => webex.rooms.list(listOpts),
+        fetchFirstPage: () => api.rooms.list(listOpts),
         matches: (item) => matchesSpaceTitle(item, params.query),
         maxResults,
         scanLimit,
@@ -483,7 +401,7 @@ export function createWebexClient(opts: WebexOpts) {
         body.isAnnouncementOnly = params.isAnnouncementOnly;
       }
 
-      const space = await webex.rooms.create(body);
+      const space = await api.rooms.create(body);
       const normalized = normalizeSpace(space);
       const cached = toCachedSpace(normalized);
       if (cached) {
@@ -507,7 +425,7 @@ export function createWebexClient(opts: WebexOpts) {
       if (params.personId) body.personId = params.personId;
       else if (params.personEmail) body.personEmail = params.personEmail;
 
-      const membership = await webex.memberships.create(body);
+      const membership = await api.memberships.create(body);
       return normalizeMembership(membership);
     });
   }
@@ -519,12 +437,12 @@ export function createWebexClient(opts: WebexOpts) {
     max?: number;
   }) {
     return withAuthRetry(async () => {
-      const listOpts: Record<string, unknown> = { max: params.max ?? 100 };
+      const listOpts: Query = { max: params.max ?? 100 };
       if (params.roomId) listOpts.roomId = params.roomId;
       if (params.personId) listOpts.personId = params.personId;
       if (params.personEmail) listOpts.personEmail = params.personEmail;
 
-      const page = await webex.memberships.list(listOpts);
+      const page = await api.memberships.list(listOpts);
       const memberships = page.items.map((m) => normalizeMembership(m));
 
       return { total: memberships.length, memberships };
@@ -533,7 +451,7 @@ export function createWebexClient(opts: WebexOpts) {
 
   async function getMembership(membershipId: string) {
     return withAuthRetry(async () => {
-      const membership = await webex.memberships.get(membershipId);
+      const membership = await api.memberships.get(membershipId);
       return normalizeMembership(membership);
     });
   }
@@ -548,14 +466,14 @@ export function createWebexClient(opts: WebexOpts) {
       if (params.isModerator !== undefined) body.isModerator = params.isModerator;
       if (params.isMonitor !== undefined) body.isMonitor = params.isMonitor;
 
-      const membership = await webex.memberships.update(body);
+      const membership = await api.memberships.update(body);
       return normalizeMembership(membership);
     });
   }
 
   async function removeMembership(membershipId: string) {
     return withAuthRetry(async () => {
-      await webex.memberships.remove(membershipId);
+      await api.memberships.remove(membershipId);
       return { deleted: true, membershipId };
     });
   }
@@ -570,7 +488,7 @@ export function createWebexClient(opts: WebexOpts) {
   }) {
     return withAuthRetry(async () => {
       if (params.messageId) {
-        const message = await webex.messages.get(params.messageId);
+        const message = await api.messages.get(params.messageId);
         return { messages: [normalizeMessage(message)] };
       }
 
@@ -578,7 +496,7 @@ export function createWebexClient(opts: WebexOpts) {
         throw new Error("roomId is required when messageId is not provided");
       }
 
-      const listOpts: Record<string, unknown> = {
+      const listOpts: Query = {
         roomId: params.roomId,
         max: params.max ?? 50,
       };
@@ -586,7 +504,7 @@ export function createWebexClient(opts: WebexOpts) {
       if (params.beforeMessage) listOpts.beforeMessage = params.beforeMessage;
       if (params.mentionedPeople) listOpts.mentionedPeople = params.mentionedPeople;
 
-      const page = await webex.messages.list(listOpts);
+      const page = await api.messages.list(listOpts);
       const messages = page.items.map((m) => normalizeMessage(m));
 
       return { total: messages.length, messages };
@@ -605,14 +523,14 @@ export function createWebexClient(opts: WebexOpts) {
       if (params.markdown !== undefined) body.markdown = params.markdown;
       if (params.roomId !== undefined) body.roomId = params.roomId;
 
-      const message = await webex.messages.update(body);
+      const message = await api.messages.update(body);
       return normalizeMessage(message);
     });
   }
 
   async function deleteMessage(messageId: string) {
     return withAuthRetry(async () => {
-      await webex.messages.remove(messageId);
+      await api.messages.remove(messageId);
       return { deleted: true, messageId };
     });
   }
@@ -638,14 +556,14 @@ export function createWebexClient(opts: WebexOpts) {
     before?: string;
   }) {
     return withAuthRetry(async () => {
-      const listOpts: Record<string, unknown> = {
+      const listOpts: Query = {
         roomId: params.roomId,
         max: 100,
       };
       if (params.before) listOpts.before = params.before;
 
       const { matched, scanned, hasMore } = await scanPagedMatches({
-        fetchFirstPage: () => webex.messages.list(listOpts),
+        fetchFirstPage: () => api.messages.list(listOpts),
         matches: (item) => matchesMessageText(item, params.query),
         maxResults: params.maxResults ?? 20,
         scanLimit: params.scanLimit ?? 500,
@@ -694,7 +612,7 @@ export function createWebexClient(opts: WebexOpts) {
         return normalizeMessage(await rest.request<RawMessage>("POST", "/messages", { form }));
       }
 
-      const message = await webex.messages.create(body);
+      const message = await api.messages.create(body);
       return normalizeMessage(message);
     });
   }
@@ -711,14 +629,14 @@ export function createWebexClient(opts: WebexOpts) {
       };
       if (params.inputs) body.inputs = params.inputs;
 
-      const action = await webex.attachmentActions.create(body);
+      const action = await api.attachmentActions.create(body);
       return normalizeAttachmentAction(action);
     });
   }
 
   async function getAttachmentAction(actionId: string) {
     return withAuthRetry(async () => {
-      const action = await webex.attachmentActions.get(actionId);
+      const action = await api.attachmentActions.get(actionId);
       return normalizeAttachmentAction(action);
     });
   }
@@ -730,12 +648,12 @@ export function createWebexClient(opts: WebexOpts) {
     max?: number;
   }) {
     return withAuthRetry(async () => {
-      const listOpts: Record<string, unknown> = { max: params.max ?? 100 };
+      const listOpts: Query = { max: params.max ?? 100 };
       if (params.email) listOpts.email = params.email;
       if (params.displayName) listOpts.displayName = params.displayName;
       if (params.id) listOpts.id = params.id;
 
-      const page = await webex.people.list(listOpts);
+      const page = await api.people.list(listOpts);
       const people = page.items.map((p) => normalizePerson(p));
 
       return { total: people.length, people };
@@ -744,14 +662,14 @@ export function createWebexClient(opts: WebexOpts) {
 
   async function getPerson(personId: string) {
     return withAuthRetry(async () => {
-      const person = await webex.people.get(personId);
+      const person = await api.people.get(personId);
       return normalizePerson(person);
     });
   }
 
   async function listTeams(params: { max?: number }) {
     return withAuthRetry(async () => {
-      const page = await webex.teams.list({ max: params.max ?? 100 });
+      const page = await api.teams.list({ max: params.max ?? 100 });
       const teams = page.items.map((t) => normalizeTeam(t));
       return { total: teams.length, teams };
     });
@@ -762,14 +680,14 @@ export function createWebexClient(opts: WebexOpts) {
       const body: Record<string, unknown> = { name: params.name };
       if (params.description) body.description = params.description;
 
-      const team = await webex.teams.create(body);
+      const team = await api.teams.create(body);
       return normalizeTeam(team);
     });
   }
 
   async function getTeam(teamId: string) {
     return withAuthRetry(async () => {
-      const team = await webex.teams.get(teamId);
+      const team = await api.teams.get(teamId);
       return normalizeTeam(team);
     });
   }
@@ -784,7 +702,7 @@ export function createWebexClient(opts: WebexOpts) {
       if (params.name !== undefined) body.name = params.name;
       if (params.description !== undefined) body.description = params.description;
 
-      const team = await webex.teams.update(body);
+      const team = await api.teams.update(body);
       return normalizeTeam(team);
     });
   }
@@ -800,12 +718,12 @@ export function createWebexClient(opts: WebexOpts) {
     max?: number;
   }) {
     return withAuthRetry(async () => {
-      const listOpts: Record<string, unknown> = { max: params.max ?? 100 };
+      const listOpts: Query = { max: params.max ?? 100 };
       if (params.teamId) listOpts.teamId = params.teamId;
       if (params.personId) listOpts.personId = params.personId;
       if (params.personEmail) listOpts.personEmail = params.personEmail;
 
-      const page = await webex.teamMemberships.list(listOpts);
+      const page = await api.teamMemberships.list(listOpts);
       const memberships = page.items.map((m) => normalizeTeamMembership(m));
 
       return { total: memberships.length, memberships };
@@ -826,14 +744,14 @@ export function createWebexClient(opts: WebexOpts) {
       if (params.personId) body.personId = params.personId;
       else if (params.personEmail) body.personEmail = params.personEmail;
 
-      const membership = await webex.teamMemberships.create(body);
+      const membership = await api.teamMemberships.create(body);
       return normalizeTeamMembership(membership);
     });
   }
 
   async function getTeamMembership(membershipId: string) {
     return withAuthRetry(async () => {
-      const membership = await webex.teamMemberships.get(membershipId);
+      const membership = await api.teamMemberships.get(membershipId);
       return normalizeTeamMembership(membership);
     });
   }
@@ -846,21 +764,21 @@ export function createWebexClient(opts: WebexOpts) {
       const body: Record<string, unknown> = { id: params.membershipId };
       if (params.isModerator !== undefined) body.isModerator = params.isModerator;
 
-      const membership = await webex.teamMemberships.update(body);
+      const membership = await api.teamMemberships.update(body);
       return normalizeTeamMembership(membership);
     });
   }
 
   async function removeTeamMembership(membershipId: string) {
     return withAuthRetry(async () => {
-      await webex.teamMemberships.remove(membershipId);
+      await api.teamMemberships.remove(membershipId);
       return { deleted: true, membershipId };
     });
   }
 
   async function listWebhooks(params: { max?: number }) {
     return withAuthRetry(async () => {
-      const page = await webex.webhooks.list({ max: params.max ?? 100 });
+      const page = await api.webhooks.list({ max: params.max ?? 100 });
       const webhooks = page.items.map((w) => normalizeWebhook(w));
       return { total: webhooks.length, webhooks };
     });
@@ -884,14 +802,14 @@ export function createWebexClient(opts: WebexOpts) {
       if (params.filter) body.filter = params.filter;
       if (params.secret) body.secret = params.secret;
 
-      const webhook = await webex.webhooks.create(body);
+      const webhook = await api.webhooks.create(body);
       return normalizeWebhook(webhook);
     });
   }
 
   async function getWebhook(webhookId: string) {
     return withAuthRetry(async () => {
-      const webhook = await webex.webhooks.get(webhookId);
+      const webhook = await api.webhooks.get(webhookId);
       return normalizeWebhook(webhook);
     });
   }
@@ -916,14 +834,14 @@ export function createWebexClient(opts: WebexOpts) {
       if (params.secret !== undefined) body.secret = params.secret;
       if (params.status !== undefined) body.status = params.status;
 
-      const webhook = await webex.webhooks.update(body);
+      const webhook = await api.webhooks.update(body);
       return normalizeWebhook(webhook);
     });
   }
 
   async function deleteWebhook(webhookId: string) {
     return withAuthRetry(async () => {
-      await webex.webhooks.remove(webhookId);
+      await api.webhooks.remove(webhookId);
       return { deleted: true, webhookId };
     });
   }

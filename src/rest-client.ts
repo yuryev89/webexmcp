@@ -23,7 +23,7 @@ export type RestClientOpts = {
   sleep?: (ms: number) => Promise<void>;
 };
 
-type Query = Record<string, string | number | boolean | undefined>;
+export type Query = Record<string, string | number | boolean | undefined>;
 
 type RequestOpts = {
   query?: Query;
@@ -47,7 +47,7 @@ export class WebexApiError extends Error {
   }
 }
 
-/** One page of a Webex list, shaped like the webex-node SDK pages. */
+/** One page of a Webex list, shaped like the Webex SDK pages. */
 export interface Page<T> {
   items: T[];
   next?: () => Promise<Page<T>>;

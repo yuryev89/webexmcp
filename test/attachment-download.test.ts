@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { createRequire } from "node:module";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -22,7 +21,6 @@ import { createRestClient } from "../src/rest-client.js";
 import { downloadResult } from "../src/tools/files.js";
 import { createWebexClient } from "../src/webex.js";
 
-const Webex = createRequire(import.meta.url)("webex-node");
 
 // Real ids taken from a Webex 1:1 room: CONTENT/<message uuid>/0 and MESSAGE/<same uuid>.
 const MESSAGE_UUID = "fde23510-d836-11f1-8828-6705dae407fb";
@@ -342,6 +340,14 @@ describe("webex client save and file details", () => {
     previousDir = process.env.WEBEX_DOWNLOAD_DIR;
     process.env.WEBEX_DOWNLOAD_DIR = directory;
     fetchMock = mock.fn(async (url: string | URL) => {
+      const message = String(url).match(/\/v1\/messages\/([^/?]+)$/);
+      if (message) {
+        return Response.json({
+          id: decodeURIComponent(message[1]!),
+          roomId: "room-1",
+          files: [CONTENTS_URL, SECOND_CONTENTS_URL, "https://webexapis.com/v1/contents/missing"],
+        });
+      }
       const file = bodies[String(url)];
       if (!file) return fileResponse("not found", {}, 404);
       return fileResponse(file.data, {
@@ -351,15 +357,6 @@ describe("webex client save and file details", () => {
       });
     });
     mock.method(globalThis, "fetch", fetchMock);
-    mock.method(Webex, "init", () => ({
-      messages: {
-        get: async (id: string) => ({
-          id,
-          roomId: "room-1",
-          files: [CONTENTS_URL, SECOND_CONTENTS_URL, "https://webexapis.com/v1/contents/missing"],
-        }),
-      },
-    }));
   });
 
   afterEach(async () => {
