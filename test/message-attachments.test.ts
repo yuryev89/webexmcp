@@ -23,6 +23,7 @@ describe("message attachments through MCP", () => {
   let sendError: Error | undefined;
   let expireFirstAttempt: boolean;
   let refreshes: number;
+  let uploadHeaders: Record<string, string>[];
 
   beforeEach(async () => {
     directory = await mkdtemp(join(tmpdir(), "webex-attachments-"));
@@ -31,6 +32,27 @@ describe("message attachments through MCP", () => {
     sendError = undefined;
     expireFirstAttempt = false;
     refreshes = 0;
+    uploadHeaders = [];
+    // Local files go out as multipart over fetch; record them the same way as SDK sends.
+    mock.method(globalThis, "fetch", async (url: string | URL, init?: RequestInit) => {
+      assert.match(String(url), /\/v1\/messages$/);
+      assert.equal(init?.method, "POST");
+      assert.ok(init?.body instanceof FormData);
+      uploadHeaders.push({ ...(init.headers as Record<string, string>) });
+      const body: Record<string, any> = {};
+      for (const [key, value] of init.body.entries()) {
+        if (key === "files") (body.files ??= []).push(value);
+        else body[key] = value;
+      }
+      sent.push(body);
+      const json = (status: number, data: unknown) => new Response(JSON.stringify(data), {
+        status, headers: { "content-type": "application/json" } });
+      if (expireFirstAttempt && sent.length === 1) return json(401, { message: "expired" });
+      if (sendError) return json(400, { message: sendError.message });
+      contents.push(await (body.files[0] as File).text());
+      return json(200, { id: "msg-1", roomId: body.roomId, text: body.text,
+        files: ["https://webexapis.com/v1/contents/file-1"] });
+    });
     // Keep our client, normalization and MCP validation real; replace only the
     // external SDK send boundary to avoid delivering messages to real people.
     mock.method(Webex, "init", () => ({ messages: {
@@ -96,11 +118,26 @@ describe("message attachments through MCP", () => {
     assert.deepEqual(contents, ["attachment contents"]);
     assert.equal(sent[0]?.toPersonId, "person-1");
     assert.equal(sent[0]?.filePath, undefined);
-    assert.equal(sent[0]?.files[0].path, filePath);
-    assert.equal(sent[0]?.files[0].destroyed, true);
+    assert.equal((sent[0]?.files[0] as File).name, "отчёт.txt");
   });
 
-  it("reopens a local file after token refresh", async () => {
+  // Review Focus 5
+  it("posts a local file as multipart with its file name", async () => {
+    const filePath = join(directory, "report.txt");
+    await writeFile(filePath, "hello");
+    const result = await send({ roomId: "room-1", text: "Report", filePath });
+    assert.equal(result.isError, undefined);
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0]?.roomId, "room-1");
+    assert.equal(sent[0]?.text, "Report");
+    assert.equal(sent[0]?.files.length, 1);
+    assert.ok(sent[0]?.files[0] instanceof Blob);
+    assert.equal((sent[0]?.files[0] as File).name, "report.txt");
+    assert.deepEqual(contents, ["hello"]);
+    assert.equal(uploadHeaders[0]?.["Content-Type"], undefined);
+  });
+
+  it("resends a local file after token refresh", async () => {
     const filePath = join(directory, "report.txt");
     await writeFile(filePath, "retry contents");
     expireFirstAttempt = true;
@@ -108,22 +145,19 @@ describe("message attachments through MCP", () => {
     assert.equal(result.isError, undefined);
     assert.equal(refreshes, 1);
     assert.equal(sent.length, 2);
-    assert.notEqual(sent[0]?.files[0], sent[1]?.files[0]);
-    assert.equal(sent[0]?.files[0].destroyed, true);
-    assert.equal(sent[1]?.files[0].destroyed, true);
+    assert.equal(uploadHeaders[1]?.Authorization, "Bearer new-token");
     assert.equal(sent[1]?.parentId, "parent-1");
     assert.equal(sent[1]?.text, "Report");
     assert.deepEqual(contents, ["retry contents"]);
   });
 
-  it("closes the upload stream and surfaces API errors", async () => {
+  it("surfaces API errors for local file uploads", async () => {
     const filePath = join(directory, "report.txt");
     await writeFile(filePath, "data");
     sendError = new Error("File rejected by Webex");
     const result = await send({ roomId: "room-1", filePath });
     assert.equal(result.isError, true);
     assert.match(JSON.stringify(result.content), /File rejected by Webex/);
-    assert.equal(sent[0]?.files[0].destroyed, true);
   });
 
   for (const [name, args] of [
@@ -150,9 +184,14 @@ describe("message attachments through MCP", () => {
     const oversized = join(directory, "large.txt");
     await writeFile(oversized, "");
     await truncate(oversized, 100 * 1024 * 1024 + 1);
-    for (const filePath of [join(directory, "missing"), directory, oversized]) {
+    for (const [filePath, message] of [
+      [join(directory, "missing"), /ENOENT/],
+      [directory, /filePath must point to a regular file/],
+      [oversized, /File exceeds the Webex 100 MB attachment limit/],
+    ] as const) {
       const result = await send({ roomId: "room-1", text: "Report", filePath });
       assert.equal(result.isError, true, filePath);
+      assert.match(JSON.stringify(result.content), message);
     }
     assert.equal(sent.length, 0);
   });

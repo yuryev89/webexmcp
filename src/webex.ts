@@ -1,10 +1,8 @@
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
+import { openAsBlob } from "node:fs";
 import { stat } from "node:fs/promises";
-import { once } from "node:events";
 import { basename, dirname, join, resolve as resolvePath } from "node:path";
-import { finished } from "node:stream/promises";
 import { readSpacesCacheConfig, resolveDownloadDir } from "./auth/config.js";
 import {
   classifyFile,
@@ -193,7 +191,10 @@ export function createWebexClient(opts: WebexOpts) {
     refreshToken?: () => Promise<string>;
   } = { getAccessToken: () => currentToken };
   if (opts.fedramp !== undefined) restOpts.fedramp = opts.fedramp;
-  if (opts.getToken) restOpts.refreshToken = opts.getToken;
+  const getToken = opts.getToken;
+  if (getToken) {
+    restOpts.refreshToken = async () => (currentToken = await getToken());
+  }
   const rest = createRestClient(restOpts);
 
   async function loadSpacesCache(): Promise<SpacesCacheRecord> {
@@ -685,16 +686,12 @@ export function createWebexClient(opts: WebexOpts) {
         if (info.size > 100 * 1024 * 1024) {
           throw new Error("File exceeds the Webex 100 MB attachment limit");
         }
-        const stream = createReadStream(params.filePath);
-        const closed = finished(stream).catch(() => undefined);
-        try {
-          await once(stream, "open");
-          body.files = [stream];
-          return normalizeMessage(await webex.messages.create(body));
-        } finally {
-          stream.destroy();
-          await closed;
+        const form = new FormData();
+        for (const [key, value] of Object.entries(body)) {
+          if (key !== "files") form.append(key, String(value));
         }
+        form.append("files", await openAsBlob(params.filePath), basename(params.filePath));
+        return normalizeMessage(await rest.request<RawMessage>("POST", "/messages", { form }));
       }
 
       const message = await webex.messages.create(body);
