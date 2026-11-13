@@ -511,6 +511,57 @@ export function createWebexClient(opts: WebexOpts) {
     });
   }
 
+  /**
+   * Resolve a message (root or reply), then fetch its thread with bounded paging.
+   * Never return content from a different space than the caller specified.
+   */
+  async function getThreadContext(params: {
+    roomId: string;
+    messageId: string;
+    maxReplies?: number;
+  }) {
+    return withAuthRetry(async () => {
+      const selected = normalizeMessage(await webex.messages.get(params.messageId));
+      if (selected.roomId && selected.roomId !== params.roomId) {
+        throw new Error("Message belongs to a different space");
+      }
+
+      const rootId = selected.parentId ?? selected.id;
+      if (!rootId) throw new Error("Message has no ID");
+      const root = selected.parentId
+        ? normalizeMessage(await webex.messages.get(rootId))
+        : selected;
+      if (root.roomId && root.roomId !== params.roomId) {
+        throw new Error("Thread root belongs to a different space");
+      }
+
+      const limit = Math.max(1, Math.min(params.maxReplies ?? 100, 500));
+      const replies: ReturnType<typeof normalizeMessage>[] = [];
+      let page = await webex.messages.list({
+        roomId: params.roomId, parentId: rootId, max: Math.min(limit, 100),
+      });
+
+      while (true) {
+        for (let i = 0; i < page.items.length; i++) {
+          const reply = normalizeMessage(page.items[i]!);
+          if (reply.parentId !== rootId || reply.id === rootId) continue;
+          replies.push(reply);
+          if (replies.length >= limit) {
+            return {
+              roomId: params.roomId, root, replies,
+              total: replies.length,
+              hasMore: i < page.items.length - 1 || Boolean(page.next),
+            };
+          }
+        }
+        if (!page.next) break;
+        page = await page.next();
+      }
+
+      return { roomId: params.roomId, root, replies, total: replies.length, hasMore: false };
+    });
+  }
+
   async function updateMessage(params: {
     messageId: string;
     text?: string;
@@ -950,6 +1001,7 @@ export function createWebexClient(opts: WebexOpts) {
     updateMembership,
     removeMembership,
     getMessages,
+    getThreadContext,
     updateMessage,
     deleteMessage,
     listDirectMessages,

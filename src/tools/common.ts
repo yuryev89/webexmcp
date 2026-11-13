@@ -1,8 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { WebexClient } from "../webex.js";
 
-export function jsonResult(data: unknown) {
-  return { content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] };
+export function jsonResult(data: unknown, compact = false) {
+  return { content: [{ type: "text" as const, text: JSON.stringify(data, null, compact ? 0 : 2) }] };
 }
 
 export type InlineImage = {
