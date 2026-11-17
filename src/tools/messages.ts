@@ -183,7 +183,7 @@ export function registerMessageTools(server: McpServer, client: WebexClient) {
         messageId: z.string().describe("Message ID"),
         text: z.string().optional().describe("New plain text"),
         markdown: z.string().optional().describe("New markdown"),
-        roomId: z.string().optional().describe("Space ID (sometimes required)"),
+        roomId: z.string().optional().describe("Space ID; looked up from the message when omitted"),
       },
     },
     async ({ messageId, text, markdown, roomId }) => {

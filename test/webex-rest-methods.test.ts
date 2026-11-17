@@ -86,4 +86,44 @@ describe("webex client REST-backed methods", () => {
     assert.equal(file.contentType, "image/png");
     assert.equal(file.base64, png.toString("base64"));
   });
+
+  it("updateMessage looks up roomId when the caller omits it", async () => {
+    const calls: { method: string; path: string; body?: unknown }[] = [];
+    fetchMock.mock.mockImplementation(async (url: string | URL, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      const path = new URL(String(url)).pathname;
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+      calls.push({ method, path, body });
+      if (method === "GET") {
+        return mockResponse(200, { id: "msg-1", roomId: "room-1", text: "old" });
+      }
+      return mockResponse(200, { id: "msg-1", roomId: "room-1", text: "new" });
+    });
+
+    const client = createWebexClient({ token: "token" });
+    const result = await client.updateMessage({ messageId: "msg-1", text: "new" });
+
+    assert.deepEqual(
+      calls.map((c) => `${c.method} ${c.path}`),
+      ["GET /v1/messages/msg-1", "PUT /v1/messages/msg-1"]
+    );
+    assert.deepEqual(calls[1]?.body, { roomId: "room-1", text: "new" });
+    assert.equal(result.text, "new");
+  });
+
+  it("updateMessage sends the given roomId without an extra lookup", async () => {
+    const calls: { method: string; body?: unknown }[] = [];
+    fetchMock.mock.mockImplementation(async (_url: string | URL, init?: RequestInit) => {
+      calls.push({
+        method: init?.method ?? "GET",
+        body: init?.body ? JSON.parse(String(init.body)) : undefined,
+      });
+      return mockResponse(200, { id: "msg-1", roomId: "room-2", markdown: "**new**" });
+    });
+
+    const client = createWebexClient({ token: "token" });
+    await client.updateMessage({ messageId: "msg-1", roomId: "room-2", markdown: "**new**" });
+
+    assert.deepEqual(calls, [{ method: "PUT", body: { roomId: "room-2", markdown: "**new**" } }]);
+  });
 });

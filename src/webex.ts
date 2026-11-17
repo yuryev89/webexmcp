@@ -569,10 +569,11 @@ export function createWebexClient(opts: WebexOpts) {
     roomId?: string;
   }) {
     return withAuthRetry(async () => {
-      const body: Record<string, unknown> = { id: params.messageId };
+      // PUT /messages/{id} rejects an edit without roomId, so look it up when the caller omits it.
+      const roomId = params.roomId ?? (await api.messages.get(params.messageId)).roomId;
+      const body: Record<string, unknown> = { id: params.messageId, roomId };
       if (params.text !== undefined) body.text = params.text;
       if (params.markdown !== undefined) body.markdown = params.markdown;
-      if (params.roomId !== undefined) body.roomId = params.roomId;
 
       const message = await api.messages.update(body);
       return normalizeMessage(message);
